@@ -1,15 +1,15 @@
 {
   "name": "khaos-nexus-ai",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "private": true,
-  "description": "D&D AI Game Master, authenticated campaign tools, encounter engine, homebrew, and procedural maps for Khaos Nexus.",
+  "description": "Authenticated D&D AI campaign platform with Discord, encounters, session intelligence, homebrew, and procedural maps.",
   "type": "module",
   "engines": {
     "node": ">=22"
   },
   "scripts": {
     "dev": "node --watch src/index.js",
-    "build": "node --check src/domain.js && node --check src/homebrew.js && node --check src/maps.js && node --check src/workspace-tools.js && node --check src/encounter-tools.js && node --check src/encounter-engine.js && node --check src/supabase.js && node --check src/store.js && node --check src/dice.js && node --check src/ai.js && node --check src/app.js && node --check src/index.js",
+    "build": "node --check src/domain.js && node --check src/homebrew.js && node --check src/maps.js && node --check src/workspace-tools.js && node --check src/encounter-tools.js && node --check src/encounter-engine.js && node --check src/discord-bridge.js && node --check src/discord-adapters.js && node --check src/discord-http.js && node --check src/discord-security.js && node --check src/session-intelligence.js && node --check src/session-intelligence-provider.js && node --check src/session-intelligence-store.js && node --check src/session-intelligence-http.js && node --check src/supabase.js && node --check src/store.js && node --check src/dice.js && node --check src/ai.js && node --check src/app.js && node --check src/index.js",
     "start": "node src/index.js",
     "test": "node --test tests/*.test.js"
   }
