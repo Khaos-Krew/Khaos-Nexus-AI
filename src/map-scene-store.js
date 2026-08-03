@@ -47,7 +47,7 @@ function sourceMapFor(input, sourceMap) {
     throw validation("sourceMap must be an object", "sourceMap");
   }
   if (sceneHash(sourceMap) !== input.gmScene.sourceMapHash) {
-    throw validation("sourceMap must match the map used to create the scene package", "sourceMap");
+    throw validation("sourceMap does not match the scene sourceMapHash", "sourceMap");
   }
   return structuredClone(sourceMap);
 }
@@ -108,7 +108,7 @@ export function withMapSceneStore(store) {
       const validatedSourceMap = sourceMapFor(input, sourceMap);
       return store.client.rpc("dnd_ai_save_map_scene", {
         p_campaign_id: campaignId,
-        p_scene_id: input.sceneId,
+        p_scene_id: input.expectedRevision === 0 ? null : input.sceneId,
         p_name: input.name,
         p_source_map: validatedSourceMap,
         p_gm_scene: input.gmScene,
@@ -162,13 +162,16 @@ export function withMapSceneStore(store) {
     const input = validateMapSceneSaveRequest(value);
     const validatedSourceMap = sourceMapFor(input, sourceMap);
     const records = campaignRecords(state, campaignId);
-    let record = input.sceneId ? records.find((item) => item.id === input.sceneId && item.active) : null;
-    if (input.sceneId && !record) throw notFound("Map scene not found");
+    const creating = input.expectedRevision === 0;
+    let record = creating
+      ? null
+      : records.find((item) => item.id === input.sceneId && item.active);
+    if (!creating && !input.sceneId) throw validation("sceneId is required when revising a map scene", "sceneId");
+    if (!creating && !record) throw notFound("Map scene not found");
     const now = new Date().toISOString();
     if (!record) {
-      if (input.expectedRevision !== 0) throw conflict("New map scenes must use expected revision zero");
       record = {
-        id: input.sceneId ?? randomUUID(),
+        id: randomUUID(),
         campaignId,
         createdAt: now,
         active: true,
