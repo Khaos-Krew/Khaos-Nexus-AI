@@ -38,6 +38,27 @@ function context() {
   };
 }
 
+function validResult() {
+  return {
+    version: 1,
+    sessionTitle: "The Broken Crucible",
+    gmRecap: "Private recap",
+    playerRecap: "Public recap",
+    canonFacts: [],
+    contradictions: [],
+    unresolvedThreads: [],
+    entityChanges: [],
+    nextSessionPrep: {
+      openingScene: "",
+      likelyNpcs: [],
+      encounterIdeas: [],
+      clues: [],
+      risks: [],
+      questions: [],
+    },
+  };
+}
+
 test("session intelligence request validation is strict", () => {
   const request = validateSessionIntelligenceRequest({
     sourceNotes: "FACT: The crucible is damaged.",
@@ -57,23 +78,57 @@ test("mock session intelligence separates GM and player material", async () => {
   const result = await provider.generateSessionIntelligence(context(), {
     sourceNotes: [
       "PUBLIC FACT: The crucible was damaged during the fight.",
-      "SECRET: The Ember Warden caused the failure.",
+      "SECRET FACT: The Ember Warden caused the failure.",
       "CONTRADICTION: The missing smith fled || Earlier notes say the smith was captured",
       "PUBLIC THREAD: Repair the crucible before the next moon.",
       "NPC: The Ember Warden is now suspicious of the party.",
     ].join("\n"),
-    transcript: [{ speaker: "Vorkesh", text: "I promise to repair it.", public: true }],
+    transcript: [
+      { speaker: "Vorkesh", text: "I promise to repair it.", public: true },
+      { speaker: "GM", text: "The hidden tunnel leads to the saboteur.", public: false },
+    ],
     focus: [],
     includePrep: true,
   });
 
   assert.match(result.gmRecap, /Ember Warden caused the failure/);
+  assert.match(result.gmRecap, /hidden tunnel leads to the saboteur/);
   assert.doesNotMatch(result.playerRecap, /Ember Warden caused the failure/);
+  assert.doesNotMatch(result.playerRecap, /hidden tunnel leads to the saboteur/);
   assert.equal(result.canonFacts[0].public, true);
+  assert.equal(result.canonFacts[1].public, false);
   assert.equal(result.contradictions.length, 1);
   assert.equal(result.unresolvedThreads[0].public, true);
   assert.equal(result.entityChanges[0].proposedTool, "upsert_npc");
   assert.match(result.nextSessionPrep.openingScene, /Repair the crucible/);
+});
+
+test("OpenAI session intelligence uses a strict empty-object tool argument schema", async () => {
+  let request;
+  const provider = withSessionIntelligence({
+    name: "openai",
+    model: "test-model",
+    async requestStructured(value) {
+      request = value;
+      return validResult();
+    },
+  });
+  const result = await provider.generateSessionIntelligence(context(), {
+    sourceNotes: "PUBLIC FACT: The crucible is damaged.",
+    transcript: [],
+    focus: [],
+    includePrep: true,
+  });
+  assert.equal(result.playerRecap, "Public recap");
+  assert.equal(request.name, "dnd_session_intelligence");
+  assert.equal(
+    request.schema.properties.entityChanges.items.properties.arguments.additionalProperties,
+    false,
+  );
+  assert.deepEqual(
+    request.schema.properties.entityChanges.items.properties.arguments.properties,
+    {},
+  );
 });
 
 test("player-safe projection removes GM recap, contradictions, prep, and private facts", () => {
