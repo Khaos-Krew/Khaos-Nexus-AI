@@ -6,6 +6,8 @@ import {
   validateDiceRequest,
   validateTurnRequest,
 } from "./domain.js";
+import { validateHomebrewRequest } from "./homebrew.js";
+import { renderMapSvg, validateMapRequest } from "./maps.js";
 
 const MAX_BODY_BYTES = 256 * 1024;
 
@@ -182,6 +184,48 @@ export function createApp({ store, provider, corsOrigin = "http://localhost:3000
           response,
           200,
           { result, campaign, meta: { provider: provider.name, model: provider.model } },
+          origin,
+        );
+        return;
+      }
+
+      if (request.method === "POST" && pathname === "/api/v1/homebrew/generations") {
+        const input = validateHomebrewRequest(await readJson(request));
+        const result = await provider.generateHomebrew(input);
+        sendJson(
+          response,
+          200,
+          {
+            result,
+            meta: {
+              provider: provider.name,
+              model: provider.model,
+              rawInspirationStored: false,
+              generatedAt: new Date().toISOString(),
+            },
+          },
+          origin,
+        );
+        return;
+      }
+
+      if (request.method === "POST" && pathname === "/api/v1/maps/generations") {
+        const input = validateMapRequest(await readJson(request));
+        const result = await provider.generateMap(input);
+        sendJson(
+          response,
+          200,
+          {
+            result,
+            svg: renderMapSvg(result, input.theme),
+            meta: {
+              provider: provider.name,
+              model: provider.model,
+              seed: result.seed,
+              reproducible: true,
+              generatedAt: new Date().toISOString(),
+            },
+          },
           origin,
         );
         return;
