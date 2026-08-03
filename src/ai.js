@@ -1,4 +1,5 @@
 import { turnResultJsonSchema, validateTurnResult } from "./domain.js";
+import { homebrewResultJsonSchema, validateHomebrewResult } from "./homebrew.js";
 
 function buildInstructions(campaign) {
   return [
@@ -42,6 +43,45 @@ function buildInput(campaign, request) {
   };
 }
 
+function buildHomebrewInstructions() {
+  return [
+    "You are Khaos Nexus AI's original tabletop homebrew designer.",
+    "Create new D&D-compatible content from the user's concept and high-level design signals.",
+    "Do not quote, closely paraphrase, reconstruct, summarize extensively, or imitate the distinctive expression of a commercial source.",
+    "Do not reproduce unique proper names, story sequences, prose, tables, stat blocks, or a source's exact arrangement of mechanics unless the input clearly identifies them as user-owned or public domain; even then, prefer fresh expression.",
+    "Treat source summaries and short excerpts as temporary inspiration only. Never include them in provenance and never claim they were stored.",
+    "Use generic mechanical concepts such as risk/reward, mobility, elemental themes, resource loops, or battlefield control, then combine and express them in an original way.",
+    "Explain balance assumptions and provide concrete playtest checks.",
+    "Set originality.status to needs-review when the requested concept remains unusually close to a named or distinctive published work.",
+    "The output must be usable homebrew, not legal advice or a claim of official compatibility or endorsement.",
+  ].join("\n");
+}
+
+function buildHomebrewInput(request) {
+  return {
+    request: {
+      contentType: request.contentType,
+      system: request.system,
+      titleHint: request.titleHint,
+      concept: request.concept,
+      targetTier: request.targetTier,
+      powerLevel: request.powerLevel,
+      constraints: request.constraints,
+    },
+    inspirations: request.inspirations.map((item) => ({
+      label: item.label,
+      authorization: item.authorization,
+      summary: item.summary,
+      designSignals: item.designSignals,
+    })),
+    outputPolicy: {
+      persistRawInspiration: false,
+      provenanceMayContain: ["source labels", "transformed high-level design signals"],
+      provenanceMustNotContain: ["source excerpts", "source summaries", "reconstructed source rules"],
+    },
+  };
+}
+
 function extractOutputText(body) {
   if (!body || typeof body !== "object") throw new Error("OpenAI returned an invalid response");
   if (typeof body.output_text === "string") return body.output_text;
@@ -50,6 +90,9 @@ function extractOutputText(body) {
     for (const content of Array.isArray(item?.content) ? item.content : []) {
       if (content?.type === "output_text" && typeof content.text === "string") {
         parts.push(content.text);
+      }
+      if (content?.type === "refusal" && typeof content.refusal === "string") {
+        throw new Error(`OpenAI refused the request: ${content.refusal}`);
       }
     }
   }
@@ -65,7 +108,7 @@ export class OpenAiProvider {
     this.name = "openai";
   }
 
-  async generateTurn(campaign, request) {
+  async requestStructured({ instructions, input, name, description, schema }) {
     const response = await fetch(`${this.baseUrl.replace(/\/$/, "")}/responses`, {
       method: "POST",
       headers: {
@@ -75,15 +118,15 @@ export class OpenAiProvider {
       body: JSON.stringify({
         model: this.model,
         store: false,
-        instructions: buildInstructions(campaign),
-        input: JSON.stringify(buildInput(campaign, request)),
+        instructions,
+        input: JSON.stringify(input),
         text: {
           format: {
             type: "json_schema",
-            name: "dnd_turn",
-            description: "A structured D&D Game Master or Co-DM turn.",
+            name,
+            description,
             strict: true,
-            schema: turnResultJsonSchema,
+            schema,
           },
         },
       }),
@@ -94,8 +137,38 @@ export class OpenAiProvider {
       const detail = (await response.text()).slice(0, 1000);
       throw new Error(`OpenAI request failed (${response.status}): ${detail}`);
     }
-    return validateTurnResult(JSON.parse(extractOutputText(await response.json())));
+    return JSON.parse(extractOutputText(await response.json()));
   }
+
+  async generateTurn(campaign, request) {
+    const output = await this.requestStructured({
+      instructions: buildInstructions(campaign),
+      input: buildInput(campaign, request),
+      name: "dnd_turn",
+      description: "A structured D&D Game Master or Co-DM turn.",
+      schema: turnResultJsonSchema,
+    });
+    return validateTurnResult(output);
+  }
+
+  async generateHomebrew(request) {
+    const output = await this.requestStructured({
+      instructions: buildHomebrewInstructions(),
+      input: buildHomebrewInput(request),
+      name: "homebrew_content",
+      description: "Original, balanced tabletop homebrew with provenance and originality review.",
+      schema: homebrewResultJsonSchema,
+    });
+    return validateHomebrewResult(output);
+  }
+}
+
+function titleCase(value) {
+  return value
+    .split(/[-\s]+/)
+    .filter(Boolean)
+    .map((part) => part[0].toUpperCase() + part.slice(1))
+    .join(" ");
 }
 
 export class MockAiProvider {
@@ -161,5 +234,66 @@ export class MockAiProvider {
       },
       safety: { status: "ok", reason: "" },
     };
+  }
+
+  async generateHomebrew(request) {
+    const contentLabel = titleCase(request.contentType);
+    const title = request.titleHint || `Original ${contentLabel}`;
+    const transformedSignals = request.inspirations.flatMap((item) => item.designSignals).slice(0, 12);
+    if (transformedSignals.length === 0) {
+      transformedSignals.push("The user concept was transformed into an original risk-and-reward mechanic.");
+    }
+
+    return validateHomebrewResult({
+      title,
+      contentType: request.contentType,
+      summary: `${title} is original ${request.system} homebrew built around ${request.concept}`,
+      designGoals: [
+        "Create a distinct gameplay identity",
+        "Preserve meaningful player choices",
+        `Target a ${request.powerLevel} power level`,
+      ],
+      sections: [
+        {
+          heading: "Concept",
+          rulesText: `Use this ${request.contentType} as a self-contained expression of the requested theme. Its features should reward deliberate setup rather than copying an existing published progression.`,
+        },
+        {
+          heading: "Table Use",
+          rulesText: "Introduce the core mechanic in a low-risk scene, then increase pressure after the group understands its resource and limits.",
+        },
+      ],
+      mechanics: [
+        {
+          name: "Signature Technique",
+          description: "Once on each of your turns, after meeting a clear fictional trigger, gain a modest tactical benefit or convert it into support for an ally.",
+          activation: "Triggered during your turn after interacting with the feature's theme.",
+          limits: "Once per turn; the stronger option is limited by proficiency bonus uses per long rest.",
+          scaling: "Increase reliability before increasing damage, control duration, or action economy.",
+        },
+      ],
+      balance: {
+        powerBand: request.powerLevel,
+        assumptions: [
+          `Designed for the ${request.targetTier} tier setting`,
+          "Compared against broadly available core options rather than a single commercial source",
+        ],
+        risks: ["Action-economy compression may be stronger than expected in optimized parties"],
+        playtestChecks: [
+          "Track uses per session and whether the feature replaces obvious baseline choices",
+          "Compare damage, control, and defensive value over three encounters",
+        ],
+      },
+      provenance: {
+        inspirationLabels: request.inspirations.map((item) => item.label),
+        transformedSignals,
+        rawTextStored: false,
+        disclaimer: "Generated as original unofficial homebrew from user-provided concepts and authorized high-level inspiration. Review for balance, setting fit, and unintended similarity before publication.",
+      },
+      originality: {
+        status: "original",
+        concerns: [],
+      },
+    });
   }
 }
