@@ -313,4 +313,14 @@ export class SupabaseCampaignStore {
       context.token,
     );
   }
+
+  async executeWorkspaceTool(campaignId, tool, argumentsValue, context) {
+    requireContext(context);
+    assertUuid(campaignId, "campaign id");
+    return this.client.rpc(
+      "dnd_ai_execute_workspace_tool",
+      { p_campaign_id: campaignId, p_tool: tool, p_arguments: argumentsValue },
+      context.token,
+    );
+  }
 }
