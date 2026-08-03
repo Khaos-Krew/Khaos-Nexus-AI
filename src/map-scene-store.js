@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import {
+  sceneHash,
   validateMapSceneApprovalRequest,
   validateMapSceneSaveRequest,
 } from "./map-scenes.js";
@@ -32,6 +33,23 @@ function conflict(message) {
   const error = new Error(message);
   error.status = 409;
   return error;
+}
+
+function validation(message, field) {
+  const error = new Error(message);
+  error.name = "ValidationError";
+  error.field = field;
+  return error;
+}
+
+function sourceMapFor(input, sourceMap) {
+  if (!sourceMap || typeof sourceMap !== "object" || Array.isArray(sourceMap)) {
+    throw validation("sourceMap must be an object", "sourceMap");
+  }
+  if (sceneHash(sourceMap) !== input.gmScene.sourceMapHash) {
+    throw validation("sourceMap must match the map used to create the scene package", "sourceMap");
+  }
+  return structuredClone(sourceMap);
 }
 
 function campaignRecords(state, campaignId) {
@@ -87,11 +105,12 @@ export function withMapSceneStore(store) {
     store.saveMapScene = async (campaignId, value, sourceMap, context) => {
       requireAuth(context);
       const input = validateMapSceneSaveRequest(value);
+      const validatedSourceMap = sourceMapFor(input, sourceMap);
       return store.client.rpc("dnd_ai_save_map_scene", {
         p_campaign_id: campaignId,
         p_scene_id: input.sceneId,
         p_name: input.name,
-        p_source_map: sourceMap,
+        p_source_map: validatedSourceMap,
         p_gm_scene: input.gmScene,
         p_player_scene: input.playerScene,
         p_expected_revision: input.expectedRevision,
@@ -141,6 +160,7 @@ export function withMapSceneStore(store) {
   store.saveMapScene = async (campaignId, value, sourceMap, context = null) => {
     if (!canManage(context)) throw forbidden();
     const input = validateMapSceneSaveRequest(value);
+    const validatedSourceMap = sourceMapFor(input, sourceMap);
     const records = campaignRecords(state, campaignId);
     let record = input.sceneId ? records.find((item) => item.id === input.sceneId && item.active) : null;
     if (input.sceneId && !record) throw notFound("Map scene not found");
@@ -148,7 +168,7 @@ export function withMapSceneStore(store) {
     if (!record) {
       if (input.expectedRevision !== 0) throw conflict("New map scenes must use expected revision zero");
       record = {
-        id: randomUUID(),
+        id: input.sceneId ?? randomUUID(),
         campaignId,
         createdAt: now,
         active: true,
@@ -159,7 +179,7 @@ export function withMapSceneStore(store) {
     }
     Object.assign(record, {
       name: input.name,
-      sourceMap: structuredClone(sourceMap),
+      sourceMap: validatedSourceMap,
       gmScene: structuredClone(input.gmScene),
       playerScene: structuredClone(input.playerScene),
       revision: input.expectedRevision + 1,
