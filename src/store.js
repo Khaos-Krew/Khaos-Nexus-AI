@@ -1,9 +1,98 @@
+import { randomUUID } from "node:crypto";
 import { mkdir, readFile, readdir, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
 
-export class JsonCampaignStore {
+function localWorkspace(campaign) {
+  if (!campaign) return null;
+  return {
+    role: "dm",
+    campaign: {
+      id: campaign.id,
+      tenant_id: campaign.tenantId ?? null,
+      name: campaign.name,
+      description: campaign.tone,
+      status: campaign.status ?? "planning",
+      ruleset: campaign.system,
+      current_location: campaign.currentScene,
+      ai_state: {
+        mode: campaign.mode,
+        contentRating: campaign.contentRating,
+        lore: campaign.lore,
+        rulesNotes: campaign.rulesNotes,
+        safety: campaign.safety,
+        worldFacts: campaign.worldFacts,
+        openThreads: campaign.openThreads,
+        notes: campaign.notes,
+        transcript: campaign.transcript,
+      },
+      created_at: campaign.createdAt,
+      updated_at: campaign.updatedAt,
+    },
+    members: [],
+    characters: campaign.playerCharacters.map((character) => ({
+      id: character.id,
+      name: character.name,
+      player_name: character.playerName,
+      summary: character.summary,
+    })),
+    npcs: [],
+    quests: [],
+    locations: [],
+    factions: [],
+    loot: [],
+    sessions: [],
+    encounters: [],
+    homebrew: [],
+  };
+}
+
+class LocalHomebrewStore {
+  constructor() {
+    this.homebrew = new Map();
+  }
+
+  createHomebrewRecord(campaignId, result) {
+    const id = randomUUID();
+    const record = {
+      id,
+      campaign_id: campaignId,
+      content_type: result.contentType,
+      name: result.title,
+      status: "draft",
+      revision: 1,
+      body: structuredClone(result),
+      approved_by: null,
+      approved_at: null,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    };
+    this.homebrew.set(id, record);
+    return structuredClone(record);
+  }
+
+  approveHomebrewRecord(campaignId, homebrewId) {
+    const record = this.homebrew.get(homebrewId);
+    if (!record || record.campaign_id !== campaignId) return null;
+    record.status = "approved";
+    record.revision += 1;
+    record.approved_at = new Date().toISOString();
+    record.updated_at = record.approved_at;
+    return structuredClone(record);
+  }
+
+  listHomebrew(campaignId) {
+    return [...this.homebrew.values()]
+      .filter((record) => record.campaign_id === campaignId)
+      .map((record) => structuredClone(record));
+  }
+}
+
+export class JsonCampaignStore extends LocalHomebrewStore {
   constructor(directory) {
+    super();
     this.directory = directory;
+    this.name = "json";
+    this.requiresAuth = false;
   }
 
   async ensureDirectory() {
@@ -45,12 +134,38 @@ export class JsonCampaignStore {
       mode: 0o600,
     });
     await rename(temporary, target);
+    return structuredClone(campaign);
+  }
+
+  async create(campaign) {
+    return this.save(campaign);
+  }
+
+  async update(campaign) {
+    return this.save(campaign);
+  }
+
+  async getWorkspace(id) {
+    const workspace = localWorkspace(await this.get(id));
+    if (workspace) workspace.homebrew = this.listHomebrew(id);
+    return workspace;
+  }
+
+  async createHomebrew(campaignId, result) {
+    return this.createHomebrewRecord(campaignId, result);
+  }
+
+  async approveHomebrew(campaignId, homebrewId) {
+    return this.approveHomebrewRecord(campaignId, homebrewId);
   }
 }
 
-export class MemoryCampaignStore {
+export class MemoryCampaignStore extends LocalHomebrewStore {
   constructor() {
+    super();
     this.campaigns = new Map();
+    this.name = "memory";
+    this.requiresAuth = false;
   }
 
   async list() {
@@ -66,5 +181,28 @@ export class MemoryCampaignStore {
 
   async save(campaign) {
     this.campaigns.set(campaign.id, structuredClone(campaign));
+    return structuredClone(campaign);
+  }
+
+  async create(campaign) {
+    return this.save(campaign);
+  }
+
+  async update(campaign) {
+    return this.save(campaign);
+  }
+
+  async getWorkspace(id) {
+    const workspace = localWorkspace(await this.get(id));
+    if (workspace) workspace.homebrew = this.listHomebrew(id);
+    return workspace;
+  }
+
+  async createHomebrew(campaignId, result) {
+    return this.createHomebrewRecord(campaignId, result);
+  }
+
+  async approveHomebrew(campaignId, homebrewId) {
+    return this.approveHomebrewRecord(campaignId, homebrewId);
   }
 }
