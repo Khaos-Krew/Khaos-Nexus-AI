@@ -63,8 +63,6 @@ test("Phase 3 encounter functions are authenticated-only and use a fixed allow-l
     "set_encounter_status",
     "add_combatant",
     "set_initiative",
-    "advance_turn",
-    "rewind_turn",
     "apply_damage",
     "heal",
     "set_combatant_stats",
@@ -78,6 +76,7 @@ test("Phase 3 encounter functions are authenticated-only and use a fixed allow-l
   ]) {
     assert.match(content, new RegExp(`when '${tool}'`, "i"));
   }
+  assert.match(content, /when 'advance_turn', 'rewind_turn' then/i);
   assert.match(
     content,
     /revoke all on function public\.dnd_ai_execute_encounter_tool\(uuid,text,jsonb\) from public,anon/i,
