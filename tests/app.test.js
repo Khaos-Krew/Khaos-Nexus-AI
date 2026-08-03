@@ -111,6 +111,79 @@ test("invalid campaign input returns a useful 400 response", async () => {
   });
 });
 
+test("homebrew can be generated from authorized summaries without storing raw inspiration", async () => {
+  await withServer(async (baseUrl) => {
+    const response = await jsonRequest(`${baseUrl}/api/v1/homebrew/generations`, {
+      method: "POST",
+      body: JSON.stringify({
+        contentType: "subclass",
+        titleHint: "Ashen Mechanist",
+        concept: "An artificer path that channels heat through crafted armor and chooses between shielding allies or overcharging tools.",
+        targetTier: "mid",
+        powerLevel: "standard",
+        constraints: ["Avoid permanent flight", "Use proficiency bonus scaling"],
+        inspirations: [
+          {
+            label: "Commercial fire-themed character option",
+            authorization: "summary-only",
+            confirmedRightToUse: true,
+            summary: "The broad appeal is controlled elemental risk and a visible heat meter. Do not reuse names, text, or its feature progression.",
+            designSignals: ["heat as a resource", "risk versus protection", "visual transformation"],
+          },
+        ],
+      }),
+    });
+
+    assert.equal(response.status, 200);
+    assert.equal(response.body.result.title, "Ashen Mechanist");
+    assert.equal(response.body.result.contentType, "subclass");
+    assert.equal(response.body.result.provenance.rawTextStored, false);
+    assert.equal(response.body.meta.rawInspirationStored, false);
+    assert.deepEqual(response.body.result.provenance.inspirationLabels, [
+      "Commercial fire-themed character option",
+    ]);
+    assert.ok(response.body.result.mechanics.length > 0);
+  });
+});
+
+test("homebrew reconstruction requests are rejected before provider invocation", async () => {
+  await withServer(async (baseUrl) => {
+    const response = await jsonRequest(`${baseUrl}/api/v1/homebrew/generations`, {
+      method: "POST",
+      body: JSON.stringify({
+        contentType: "subclass",
+        concept: "Recreate the exact published subclass word-for-word with identical features.",
+      }),
+    });
+    assert.equal(response.status, 400);
+    assert.equal(response.body.field, "concept");
+    assert.match(response.body.error, /reproduce|reconstruct/i);
+  });
+});
+
+test("short excerpts are limited at validation time", async () => {
+  await withServer(async (baseUrl) => {
+    const response = await jsonRequest(`${baseUrl}/api/v1/homebrew/generations`, {
+      method: "POST",
+      body: JSON.stringify({
+        contentType: "spell",
+        concept: "Create an original defensive spell from the general theme.",
+        inspirations: [
+          {
+            label: "Authorized excerpt",
+            authorization: "short-excerpt",
+            confirmedRightToUse: true,
+            summary: "x".repeat(701),
+            designSignals: [],
+          },
+        ],
+      }),
+    });
+    assert.equal(response.status, 400);
+    assert.equal(response.body.field, "inspirations[0].summary");
+  });
+});
+
 test("dice roller supports advantage-style keep-high notation", () => {
   const values = [0.1, 0.9];
   let index = 0;
