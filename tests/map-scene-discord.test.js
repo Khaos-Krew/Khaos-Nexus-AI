@@ -5,6 +5,7 @@ import { createApp } from "../src/app.js";
 import { LocalDiscordBridge } from "../src/discord-adapters.js";
 import { attachDiscordRoutes } from "../src/discord-http.js";
 import { LocalEncounterEngine } from "../src/encounter-engine.js";
+import { attachMapSceneDiscordRoutes } from "../src/map-scene-discord.js";
 import { withMapSceneStore } from "../src/map-scene-store.js";
 import { MemoryCampaignStore } from "../src/store.js";
 
@@ -32,6 +33,12 @@ async function withServer(run) {
     provider,
     discordBridge,
     encounterEngine,
+    corsOrigin: "*",
+  });
+  attachMapSceneDiscordRoutes(server, {
+    store,
+    provider,
+    discordBridge,
     corsOrigin: "*",
   });
   await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
@@ -98,6 +105,17 @@ function mapRequest() {
     constraints: ["one hidden chamber"],
   };
 }
+
+test("Discord discovery includes the Phase 7 scene commands without hiding prior commands", async () => {
+  await withServer(async (baseUrl) => {
+    const response = await jsonRequest(`${baseUrl}/api/v1/discord/commands`);
+    assert.equal(response.status, 200);
+    const names = response.body.commands.map((entry) => entry.name);
+    for (const name of ["campaign_status", "search_knowledge", "generate_map_scene", "map_scene", "approve_map_scene", "export_map_scene"]) {
+      assert.ok(names.includes(name), `missing ${name}`);
+    }
+  });
+});
 
 test("Discord generates, persists, approves, views, and exports map scenes", async () => {
   await withServer(async (baseUrl) => {
@@ -173,5 +191,17 @@ test("Discord requires exact map scene revisions", async () => {
     });
     assert.equal(stale.status, 409);
     assert.match(stale.body.error, /reload before approving/i);
+  });
+});
+
+test("Phase 7 delegation preserves existing Discord commands", async () => {
+  await withServer(async (baseUrl) => {
+    await setup(baseUrl);
+    const roll = await jsonRequest(`${baseUrl}/api/v1/discord/commands`, {
+      method: "POST",
+      body: JSON.stringify(command("roll", { notation: "1d20+5" })),
+    });
+    assert.equal(roll.status, 200);
+    assert.match(roll.body.discord.content, /1d20\+5/i);
   });
 });
