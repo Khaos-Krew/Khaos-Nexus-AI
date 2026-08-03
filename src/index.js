@@ -1,4 +1,6 @@
 import { MockAiProvider, OpenAiProvider } from "./ai.js";
+import { withCoDmDraft } from "./co-dm.js";
+import { attachCoDmRoutes } from "./co-dm-http.js";
 import { createApp } from "./app.js";
 import { LocalDiscordBridge, SupabaseDiscordBridge } from "./discord-adapters.js";
 import { attachDiscordRoutes } from "./discord-http.js";
@@ -22,7 +24,7 @@ import {
   SupabaseRestClient,
 } from "./supabase.js";
 
-const SERVICE_VERSION = "0.10.0";
+const SERVICE_VERSION = "0.11.0";
 
 function booleanEnv(name, defaultValue = false) {
   const value = process.env[name];
@@ -34,16 +36,16 @@ function booleanEnv(name, defaultValue = false) {
 
 function createBaseProvider() {
   const providerName = (process.env.AI_PROVIDER ?? "mock").toLowerCase();
-  if (providerName === "mock") return withSessionIntelligence(new MockAiProvider());
+  if (providerName === "mock") return withCoDmDraft(withSessionIntelligence(new MockAiProvider()));
   if (providerName === "openai") {
     if (!process.env.OPENAI_API_KEY) {
       throw new Error("OPENAI_API_KEY is required when AI_PROVIDER=openai");
     }
-    return withSessionIntelligence(new OpenAiProvider(
+    return withCoDmDraft(withSessionIntelligence(new OpenAiProvider(
       process.env.OPENAI_API_KEY,
       process.env.OPENAI_MODEL ?? "gpt-5-mini",
       process.env.OPENAI_BASE_URL ?? "https://api.openai.com/v1",
-    ));
+    )));
   }
   throw new Error(`Unsupported AI_PROVIDER: ${providerName}`);
 }
@@ -103,6 +105,12 @@ const server = createApp({
   ...persistence,
   provider,
   encounterEngine,
+  corsOrigin,
+});
+
+attachCoDmRoutes(server, {
+  ...persistence,
+  provider,
   corsOrigin,
 });
 
