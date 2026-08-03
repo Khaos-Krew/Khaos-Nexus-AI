@@ -8,6 +8,18 @@ import {
 
 const APP_ID = "11111111-1111-4111-8111-111111111111";
 const HOME_ID = "22222222-2222-4222-8222-222222222222";
+const SESSION_ID = "33333333-3333-4333-8333-333333333333";
+
+function commandBase(command, options) {
+  return {
+    registeredAppId: APP_ID,
+    guildId: "123456789012345678",
+    resourceId: "223456789012345678",
+    discordUserId: "423456789012345678",
+    command,
+    options,
+  };
+}
 
 test("Discord command discovery exposes only the supported bridge commands", () => {
   assert.deepEqual(
@@ -21,6 +33,9 @@ test("Discord command discovery exposes only the supported bridge commands", () 
       "encounter_state",
       "workspace_tool",
       "encounter_tool",
+      "session_intelligence",
+      "generate_session_intelligence",
+      "approve_session_intelligence",
     ],
   );
 });
@@ -49,37 +64,45 @@ test("Discord bindings accept only existing text resources and non-voice purpose
 });
 
 test("Discord commands require valid snowflakes and strict command payloads", () => {
-  const command = validateDiscordCommandRequest({
-    registeredAppId: APP_ID,
-    guildId: "123456789012345678",
-    resourceId: "223456789012345678",
-    discordUserId: "423456789012345678",
-    command: "roll",
-    options: { notation: "2d20kh1+5" },
-  });
+  const command = validateDiscordCommandRequest(commandBase("roll", { notation: "2d20kh1+5" }));
   assert.equal(command.options.notation, "2d20kh1+5");
 
   assert.throws(
     () => validateDiscordCommandRequest({
-      registeredAppId: APP_ID,
+      ...commandBase("campaign_status", {}),
       guildId: "not-a-snowflake",
-      resourceId: "223456789012345678",
-      discordUserId: "423456789012345678",
-      command: "campaign_status",
-      options: {},
     }),
     /Discord snowflake/i,
   );
 });
 
-test("Discord manager actions validate their identifiers", () => {
-  const command = validateDiscordCommandRequest({
-    registeredAppId: APP_ID,
-    guildId: "123456789012345678",
-    resourceId: "223456789012345678",
-    discordUserId: "423456789012345678",
-    command: "approve_homebrew",
-    options: { homebrewId: HOME_ID },
-  });
-  assert.equal(command.options.homebrewId, HOME_ID);
+test("Discord manager actions validate their identifiers and revisions", () => {
+  const homebrew = validateDiscordCommandRequest(commandBase(
+    "approve_homebrew",
+    { homebrewId: HOME_ID },
+  ));
+  assert.equal(homebrew.options.homebrewId, HOME_ID);
+
+  const intelligence = validateDiscordCommandRequest(commandBase(
+    "session_intelligence",
+    { sessionId: SESSION_ID },
+  ));
+  assert.equal(intelligence.options.sessionId, SESSION_ID);
+
+  const generated = validateDiscordCommandRequest(commandBase(
+    "generate_session_intelligence",
+    {
+      sessionId: SESSION_ID,
+      request: { sourceNotes: "PUBLIC FACT: The crucible is damaged." },
+      persist: true,
+      expectedRevision: 0,
+    },
+  ));
+  assert.equal(generated.options.expectedRevision, 0);
+
+  const approved = validateDiscordCommandRequest(commandBase(
+    "approve_session_intelligence",
+    { sessionId: SESSION_ID, expectedRevision: 1 },
+  ));
+  assert.equal(approved.options.expectedRevision, 1);
 });
