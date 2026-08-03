@@ -8,8 +8,10 @@ import {
 } from "./domain.js";
 import { validateHomebrewRequest } from "./homebrew.js";
 import { renderMapSvg, validateMapRequest } from "./maps.js";
+import { extractBearerToken } from "./supabase.js";
 
 const MAX_BODY_BYTES = 256 * 1024;
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 function sendJson(response, status, body, origin) {
   response.writeHead(status, {
@@ -47,6 +49,13 @@ async function readJson(request) {
   }
 }
 
+function validationError(message, field) {
+  const error = new Error(message);
+  error.name = "ValidationError";
+  error.field = field;
+  return error;
+}
+
 function mergeUnique(existing, additions) {
   return [...new Set([...existing, ...additions].map((item) => item.trim()).filter(Boolean))];
 }
@@ -82,7 +91,48 @@ function routeCampaignId(pathname, suffix = "") {
   return pattern.exec(pathname)?.[1] ?? null;
 }
 
-export function createApp({ store, provider, corsOrigin = "http://localhost:3000", rateLimit } = {}) {
+function routeHomebrewApproval(pathname) {
+  const match = /^\/api\/v1\/campaigns\/([0-9a-f-]{36})\/homebrew\/([0-9a-f-]{36})\/approve$/i.exec(
+    pathname,
+  );
+  return match ? { campaignId: match[1], homebrewId: match[2] } : null;
+}
+
+async function authenticateRequest(request, { authVerifier, authRequired, store }) {
+  const token = extractBearerToken(request);
+  const mustAuthenticate = authRequired || store.requiresAuth;
+  if (!token) {
+    if (mustAuthenticate) {
+      const error = new Error("Authorization: Bearer <access-token> is required");
+      error.status = 401;
+      throw error;
+    }
+    return { token: null, user: null };
+  }
+  if (!authVerifier) {
+    const error = new Error("Bearer authentication is not configured on this service");
+    error.status = 503;
+    throw error;
+  }
+  return { token, user: await authVerifier.verify(token) };
+}
+
+function tenantIdFromBody(body, required) {
+  const tenantId = typeof body.tenantId === "string" ? body.tenantId.trim() : "";
+  if (required && !UUID_PATTERN.test(tenantId)) {
+    throw validationError("tenantId must be a valid UUID in Supabase mode", "tenantId");
+  }
+  return tenantId || undefined;
+}
+
+export function createApp({
+  store,
+  provider,
+  authVerifier = null,
+  authRequired = false,
+  corsOrigin = "http://localhost:3000",
+  rateLimit,
+} = {}) {
   if (!store || !provider) throw new Error("store and provider are required");
   const allowRequest = createRateLimiter(rateLimit);
 
@@ -100,12 +150,6 @@ export function createApp({ store, provider, corsOrigin = "http://localhost:3000
       return;
     }
 
-    const clientKey = request.socket.remoteAddress ?? "unknown";
-    if (!allowRequest(clientKey)) {
-      sendJson(response, 429, { error: "Rate limit exceeded" }, origin);
-      return;
-    }
-
     try {
       const url = new URL(request.url ?? "/", "http://localhost");
       const { pathname } = url;
@@ -114,22 +158,43 @@ export function createApp({ store, provider, corsOrigin = "http://localhost:3000
         sendJson(
           response,
           200,
-          { status: "ok", service: "khaos-nexus-ai", provider: provider.name, model: provider.model },
+          {
+            status: "ok",
+            service: "khaos-nexus-ai",
+            provider: provider.name,
+            model: provider.model,
+            store: store.name ?? "unknown",
+            authentication: authRequired || store.requiresAuth ? "required" : "optional",
+          },
           origin,
         );
         return;
       }
 
+      const auth = await authenticateRequest(request, { authVerifier, authRequired, store });
+      const clientKey = auth.user?.id ?? request.socket.remoteAddress ?? "unknown";
+      if (!allowRequest(clientKey)) {
+        sendJson(response, 429, { error: "Rate limit exceeded" }, origin);
+        return;
+      }
+
+      if (request.method === "GET" && pathname === "/api/v1/me") {
+        sendJson(response, 200, { user: auth.user }, origin);
+        return;
+      }
+
       if (request.method === "GET" && pathname === "/api/v1/campaigns") {
-        sendJson(response, 200, { campaigns: await store.list() }, origin);
+        sendJson(response, 200, { campaigns: await store.list(auth) }, origin);
         return;
       }
 
       if (request.method === "POST" && pathname === "/api/v1/campaigns") {
-        const input = validateCreateCampaign(await readJson(request));
+        const body = await readJson(request);
+        const input = validateCreateCampaign(body);
         const now = new Date().toISOString();
         const campaign = {
           ...input,
+          tenantId: tenantIdFromBody(body, Boolean(store.requiresAuth)),
           playerCharacters: input.playerCharacters.map((character) => ({
             ...character,
             id: character.id ?? randomUUID(),
@@ -140,17 +205,29 @@ export function createApp({ store, provider, corsOrigin = "http://localhost:3000
           openThreads: [],
           notes: [],
           transcript: [],
+          status: "planning",
           createdAt: now,
           updatedAt: now,
         };
-        await store.save(campaign);
-        sendJson(response, 201, { campaign }, origin);
+        const createdCampaign = await store.create(campaign, auth);
+        sendJson(response, 201, { campaign: createdCampaign }, origin);
+        return;
+      }
+
+      const workspaceCampaignId = routeCampaignId(pathname, "workspace");
+      if (request.method === "GET" && workspaceCampaignId) {
+        const workspace = await store.getWorkspace(workspaceCampaignId, auth);
+        if (!workspace) {
+          sendJson(response, 404, { error: "Campaign not found" }, origin);
+          return;
+        }
+        sendJson(response, 200, { workspace }, origin);
         return;
       }
 
       const campaignId = routeCampaignId(pathname);
       if (request.method === "GET" && campaignId) {
-        const campaign = await store.get(campaignId);
+        const campaign = await store.get(campaignId, auth);
         if (!campaign) {
           sendJson(response, 404, { error: "Campaign not found" }, origin);
           return;
@@ -161,13 +238,14 @@ export function createApp({ store, provider, corsOrigin = "http://localhost:3000
 
       const turnCampaignId = routeCampaignId(pathname, "turns");
       if (request.method === "POST" && turnCampaignId) {
-        const campaign = await store.get(turnCampaignId);
+        const campaign = await store.get(turnCampaignId, auth);
         if (!campaign) {
           sendJson(response, 404, { error: "Campaign not found" }, origin);
           return;
         }
         const input = validateTurnRequest(await readJson(request));
         const result = await provider.generateTurn(campaign, input);
+        const expectedUpdatedAt = campaign.updatedAt;
         applyTurnResult(campaign, result);
         const now = new Date().toISOString();
         campaign.transcript.push({
@@ -178,12 +256,13 @@ export function createApp({ store, provider, corsOrigin = "http://localhost:3000
           result,
         });
         campaign.transcript = campaign.transcript.slice(-100);
+        campaign.expectedUpdatedAt = expectedUpdatedAt;
         campaign.updatedAt = now;
-        await store.save(campaign);
+        const updatedCampaign = await store.update(campaign, auth);
         sendJson(
           response,
           200,
-          { result, campaign, meta: { provider: provider.name, model: provider.model } },
+          { result, campaign: updatedCampaign, meta: { provider: provider.name, model: provider.model } },
           origin,
         );
         return;
@@ -206,6 +285,40 @@ export function createApp({ store, provider, corsOrigin = "http://localhost:3000
           },
           origin,
         );
+        return;
+      }
+
+      const campaignHomebrewId = routeCampaignId(pathname, "homebrew/generations");
+      if (request.method === "POST" && campaignHomebrewId) {
+        const input = validateHomebrewRequest(await readJson(request));
+        const result = await provider.generateHomebrew(input);
+        const homebrew = await store.createHomebrew(campaignHomebrewId, result, auth);
+        sendJson(
+          response,
+          201,
+          {
+            result,
+            homebrew,
+            meta: {
+              provider: provider.name,
+              model: provider.model,
+              rawInspirationStored: false,
+              generatedAt: new Date().toISOString(),
+            },
+          },
+          origin,
+        );
+        return;
+      }
+
+      const approval = routeHomebrewApproval(pathname);
+      if (request.method === "POST" && approval) {
+        const homebrew = await store.approveHomebrew(approval.campaignId, approval.homebrewId, auth);
+        if (!homebrew) {
+          sendJson(response, 404, { error: "Homebrew entry not found" }, origin);
+          return;
+        }
+        sendJson(response, 200, { homebrew }, origin);
         return;
       }
 
