@@ -5,23 +5,27 @@ import test from "node:test";
 const indexUrl = new URL("../src/index.js", import.meta.url);
 const packageUrl = new URL("../package.json", import.meta.url);
 
-test("runtime attaches Discord, session intelligence, retrieval, and advanced map scene routes", async () => {
+test("runtime attaches all production routes and the shared provider control boundary", async () => {
   const content = await readFile(indexUrl, "utf8");
   assert.match(content, /withSessionIntelligence\(new MockAiProvider\(\)\)/);
   assert.match(content, /withSessionIntelligenceStore\(/);
   assert.match(content, /withRetrievalStore\(/);
   assert.match(content, /withMapSceneStore\(/);
+  assert.match(content, /withProductionControlStore\(/);
+  assert.match(content, /withProductionControls\(baseProvider, persistence\.store\)/);
   assert.match(content, /attachSessionIntelligenceRoutes\(server/);
   assert.match(content, /attachRetrievalRoutes\(server/);
   assert.match(content, /attachMapSceneRoutes\(server/);
   assert.match(content, /attachDiscordRoutes\(server/);
   assert.match(content, /attachMapSceneDiscordRoutes\(server/);
   assert.match(content, /attachDiscordSecurity\(server/);
+  assert.match(content, /attachProductionControlRoutes\(server/);
   assert.match(content, /encounterEngine/);
 });
 
-test("build validates every runtime wrapper introduced through Phase 7", async () => {
+test("build validates every runtime wrapper introduced through Phase 8", async () => {
   const packageJson = JSON.parse(await readFile(packageUrl, "utf8"));
+  assert.equal(packageJson.version, "0.10.0");
   for (const modulePath of [
     "src/discord-http.js",
     "src/discord-security.js",
@@ -38,6 +42,11 @@ test("build validates every runtime wrapper introduced through Phase 7", async (
     "src/map-scene-store.js",
     "src/map-scene-http.js",
     "src/map-scene-discord.js",
+    "src/evaluations.js",
+    "src/production-context.js",
+    "src/production-control-store.js",
+    "src/production-controls.js",
+    "src/production-control-http.js",
   ]) {
     assert.match(packageJson.scripts.build, new RegExp(modulePath.replaceAll(".", "\\.")));
   }

@@ -7,6 +7,9 @@ import { LocalEncounterEngine } from "./encounter-engine.js";
 import { attachMapSceneDiscordRoutes } from "./map-scene-discord.js";
 import { attachMapSceneRoutes } from "./map-scene-http.js";
 import { withMapSceneStore } from "./map-scene-store.js";
+import { attachProductionControlRoutes } from "./production-control-http.js";
+import { withProductionControlStore } from "./production-control-store.js";
+import { defaultGenerationPolicies, withProductionControls } from "./production-controls.js";
 import { attachRetrievalRoutes } from "./retrieval-http.js";
 import { withRetrievalStore } from "./retrieval-store.js";
 import { withSessionIntelligence } from "./session-intelligence-provider.js";
@@ -19,6 +22,8 @@ import {
   SupabaseRestClient,
 } from "./supabase.js";
 
+const SERVICE_VERSION = "0.10.0";
+
 function booleanEnv(name, defaultValue = false) {
   const value = process.env[name];
   if (value === undefined) return defaultValue;
@@ -27,7 +32,7 @@ function booleanEnv(name, defaultValue = false) {
   throw new Error(`${name} must be true or false`);
 }
 
-function createProvider() {
+function createBaseProvider() {
   const providerName = (process.env.AI_PROVIDER ?? "mock").toLowerCase();
   if (providerName === "mock") return withSessionIntelligence(new MockAiProvider());
   if (providerName === "openai") {
@@ -43,14 +48,14 @@ function createProvider() {
   throw new Error(`Unsupported AI_PROVIDER: ${providerName}`);
 }
 
-function decorateStore(store) {
+function decorateCampaignStore(store) {
   return withMapSceneStore(withRetrievalStore(withSessionIntelligenceStore(store)));
 }
 
 function createPersistence() {
   const storeName = (process.env.CAMPAIGN_STORE ?? "json").toLowerCase();
   if (storeName === "json") {
-    const store = decorateStore(new JsonCampaignStore(process.env.DATA_DIR ?? "./data"));
+    const store = decorateCampaignStore(new JsonCampaignStore(process.env.DATA_DIR ?? "./data"));
     const authRequired = booleanEnv("AUTH_REQUIRED", false);
     const discordBridge = new LocalDiscordBridge();
     if (!authRequired) {
@@ -71,7 +76,7 @@ function createPersistence() {
     };
     const client = new SupabaseRestClient(config);
     return {
-      store: decorateStore(new SupabaseCampaignStore(client)),
+      store: decorateCampaignStore(new SupabaseCampaignStore(client)),
       discordBridge: new SupabaseDiscordBridge(client),
       authVerifier: new SupabaseAuthVerifier(config),
       authRequired: true,
@@ -86,8 +91,12 @@ if (!Number.isInteger(port) || port < 1 || port > 65535) {
   throw new Error("PORT must be an integer between 1 and 65535");
 }
 
-const provider = createProvider();
+const baseProvider = createBaseProvider();
 const persistence = createPersistence();
+persistence.store = withProductionControlStore(persistence.store, {
+  defaultPolicies: defaultGenerationPolicies(baseProvider.name, baseProvider.model),
+});
+const provider = withProductionControls(baseProvider, persistence.store);
 const corsOrigin = process.env.CORS_ORIGIN ?? "http://localhost:3000";
 const encounterEngine = persistence.store.requiresAuth ? null : new LocalEncounterEngine();
 const server = createApp({
@@ -129,10 +138,17 @@ attachMapSceneDiscordRoutes(server, {
 
 attachDiscordSecurity(server, { corsOrigin });
 
+attachProductionControlRoutes(server, {
+  ...persistence,
+  provider,
+  corsOrigin,
+  serviceVersion: SERVICE_VERSION,
+});
+
 server.listen(port, () => {
   console.log(
     `Khaos Nexus AI listening on http://localhost:${port} ` +
       `(${provider.name}/${provider.model}; store=${persistence.store.name}; ` +
-      `auth=${persistence.authRequired ? "required" : "optional"})`,
+      `auth=${persistence.authRequired ? "required" : "optional"}; controls=enabled)`,
   );
 });
