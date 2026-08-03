@@ -80,6 +80,13 @@ test("session intelligence generates, saves, reads, and approves through HTTP", 
     assert.equal(generated.body.meta.persisted, false);
     assert.match(generated.body.result.gmRecap, /warden caused the failure/i);
 
+    const missingRevision = await jsonRequest(`${root}/save`, {
+      method: "POST",
+      body: JSON.stringify({ intelligence: generated.body.result }),
+    });
+    assert.equal(missingRevision.status, 400);
+    assert.equal(missingRevision.body.field, "expectedRevision");
+
     const saved = await jsonRequest(`${root}/save`, {
       method: "POST",
       body: JSON.stringify({ intelligence: generated.body.result, expectedRevision: 0 }),
@@ -91,6 +98,13 @@ test("session intelligence generates, saves, reads, and approves through HTTP", 
     const read = await jsonRequest(root);
     assert.equal(read.status, 200);
     assert.equal(read.body.intelligence.intelligence.sessionTitle, "The Broken Crucible");
+
+    const missingApprovalRevision = await jsonRequest(`${root}/approve`, {
+      method: "POST",
+      body: JSON.stringify({}),
+    });
+    assert.equal(missingApprovalRevision.status, 400);
+    assert.equal(missingApprovalRevision.body.field, "expectedRevision");
 
     const approved = await jsonRequest(`${root}/approve`, {
       method: "POST",
