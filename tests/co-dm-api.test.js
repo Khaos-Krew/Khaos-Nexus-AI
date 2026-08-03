@@ -92,6 +92,13 @@ test("desktop Co-DM endpoint returns a stateless review draft without campaigns"
 
 test("request IDs and privacy flags are enforced with safe errors", async () => {
   await withServer(async (baseUrl) => {
+    const missing = await jsonRequest(`${baseUrl}/api/v1/dnd/co-dm/drafts`, {
+      method: "POST",
+      body: JSON.stringify(body()),
+    });
+    assert.equal(missing.status, 400);
+    assert.match(missing.body.error.message, /X-Khaos-Request-Id is required/i);
+
     const mismatch = await jsonRequest(`${baseUrl}/api/v1/dnd/co-dm/drafts`, {
       method: "POST",
       headers: { "X-Khaos-Request-Id": "22222222-2222-4222-8222-222222222222" },
