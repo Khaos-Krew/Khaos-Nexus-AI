@@ -1,3 +1,4 @@
+import { requireExpectedRevision } from "./revision-contract.js";
 import { extractBearerToken } from "./supabase.js";
 import {
   validateSessionIntelligenceApprovalRequest,
@@ -192,7 +193,9 @@ export function attachSessionIntelligenceRoutes(server, {
       }
 
       if (match.action === "save" && request.method === "POST") {
-        const input = validateSessionIntelligenceSaveRequest(await readJson(request));
+        const body = await readJson(request);
+        requireExpectedRevision(body, { minimum: 0 });
+        const input = validateSessionIntelligenceSaveRequest(body);
         const intelligence = await store.saveSessionIntelligence(
           match.campaignId,
           match.sessionId,
@@ -205,7 +208,9 @@ export function attachSessionIntelligenceRoutes(server, {
       }
 
       if (match.action === "approve" && request.method === "POST") {
-        const input = validateSessionIntelligenceApprovalRequest(await readJson(request));
+        const body = await readJson(request);
+        requireExpectedRevision(body, { minimum: 1 });
+        const input = validateSessionIntelligenceApprovalRequest(body);
         const intelligence = await store.approveSessionIntelligence(
           match.campaignId,
           match.sessionId,
