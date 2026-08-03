@@ -1,6 +1,11 @@
 import { MockAiProvider, OpenAiProvider } from "./ai.js";
 import { createApp } from "./app.js";
 import { LocalDiscordBridge, SupabaseDiscordBridge } from "./discord-adapters.js";
+import { attachDiscordRoutes } from "./discord-http.js";
+import { LocalEncounterEngine } from "./encounter-engine.js";
+import { withSessionIntelligence } from "./session-intelligence-provider.js";
+import { attachSessionIntelligenceRoutes } from "./session-intelligence-http.js";
+import { withSessionIntelligenceStore } from "./session-intelligence-store.js";
 import { JsonCampaignStore } from "./store.js";
 import {
   SupabaseAuthVerifier,
@@ -18,16 +23,16 @@ function booleanEnv(name, defaultValue = false) {
 
 function createProvider() {
   const providerName = (process.env.AI_PROVIDER ?? "mock").toLowerCase();
-  if (providerName === "mock") return new MockAiProvider();
+  if (providerName === "mock") return withSessionIntelligence(new MockAiProvider());
   if (providerName === "openai") {
     if (!process.env.OPENAI_API_KEY) {
       throw new Error("OPENAI_API_KEY is required when AI_PROVIDER=openai");
     }
-    return new OpenAiProvider(
+    return withSessionIntelligence(new OpenAiProvider(
       process.env.OPENAI_API_KEY,
       process.env.OPENAI_MODEL ?? "gpt-5-mini",
       process.env.OPENAI_BASE_URL ?? "https://api.openai.com/v1",
-    );
+    ));
   }
   throw new Error(`Unsupported AI_PROVIDER: ${providerName}`);
 }
@@ -35,7 +40,9 @@ function createProvider() {
 function createPersistence() {
   const storeName = (process.env.CAMPAIGN_STORE ?? "json").toLowerCase();
   if (storeName === "json") {
-    const store = new JsonCampaignStore(process.env.DATA_DIR ?? "./data");
+    const store = withSessionIntelligenceStore(
+      new JsonCampaignStore(process.env.DATA_DIR ?? "./data"),
+    );
     const authRequired = booleanEnv("AUTH_REQUIRED", false);
     const discordBridge = new LocalDiscordBridge();
     if (!authRequired) {
@@ -56,7 +63,7 @@ function createPersistence() {
     };
     const client = new SupabaseRestClient(config);
     return {
-      store: new SupabaseCampaignStore(client),
+      store: withSessionIntelligenceStore(new SupabaseCampaignStore(client)),
       discordBridge: new SupabaseDiscordBridge(client),
       authVerifier: new SupabaseAuthVerifier(config),
       authRequired: true,
@@ -73,10 +80,26 @@ if (!Number.isInteger(port) || port < 1 || port > 65535) {
 
 const provider = createProvider();
 const persistence = createPersistence();
+const corsOrigin = process.env.CORS_ORIGIN ?? "http://localhost:3000";
+const encounterEngine = persistence.store.requiresAuth ? null : new LocalEncounterEngine();
 const server = createApp({
   ...persistence,
   provider,
-  corsOrigin: process.env.CORS_ORIGIN ?? "http://localhost:3000",
+  encounterEngine,
+  corsOrigin,
+});
+
+attachSessionIntelligenceRoutes(server, {
+  ...persistence,
+  provider,
+  corsOrigin,
+});
+
+attachDiscordRoutes(server, {
+  ...persistence,
+  provider,
+  encounterEngine,
+  corsOrigin,
 });
 
 server.listen(port, () => {
