@@ -1,4 +1,4 @@
-import { playerSafeSessionIntelligence } from "./session-intelligence.js";
+import { projectPublicSessionIntelligence } from "./session-intelligence-public.js";
 
 function authRequired(context) {
   if (!context?.token || !context?.user?.id) {
@@ -81,7 +81,7 @@ export function withSessionIntelligenceStore(store) {
         : canManage
           ? structuredClone(record.intelligence)
           : record.approved
-            ? playerSafeSessionIntelligence(record.intelligence)
+            ? projectPublicSessionIntelligence(record.intelligence)
             : null,
       revision: record?.revision ?? 0,
       approved: Boolean(record?.approved),
