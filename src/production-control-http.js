@@ -9,6 +9,7 @@ const MAX_BODY_BYTES = 1024 * 1024;
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const CAPABILITIES = Object.freeze([
   "dnd.campaign.turn",
+  "dnd.co-dm.draft",
   "dnd.homebrew.generate",
   "dnd.map.generate",
   "dnd.map.scene",
@@ -128,7 +129,7 @@ export function attachProductionControlRoutes(server, {
   authVerifier = null,
   authRequired = false,
   corsOrigin = "http://localhost:3000",
-  serviceVersion = "0.10.0",
+  serviceVersion = "0.11.0",
 } = {}) {
   if (!server || !store || !provider) throw new Error("server, store, and provider are required");
   const required = [
