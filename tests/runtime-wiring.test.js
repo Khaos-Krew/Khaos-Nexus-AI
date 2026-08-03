@@ -5,14 +5,15 @@ import test from "node:test";
 const indexUrl = new URL("../src/index.js", import.meta.url);
 const packageUrl = new URL("../package.json", import.meta.url);
 
-test("runtime attaches all production routes and the shared provider control boundary", async () => {
+test("runtime attaches the desktop Co-DM contract and shared production boundary", async () => {
   const content = await readFile(indexUrl, "utf8");
-  assert.match(content, /withSessionIntelligence\(new MockAiProvider\(\)\)/);
+  assert.match(content, /withCoDmDraft\(withSessionIntelligence\(new MockAiProvider\(\)\)\)/);
   assert.match(content, /withSessionIntelligenceStore\(/);
   assert.match(content, /withRetrievalStore\(/);
   assert.match(content, /withMapSceneStore\(/);
   assert.match(content, /withProductionControlStore\(/);
   assert.match(content, /withProductionControls\(baseProvider, persistence\.store\)/);
+  assert.match(content, /attachCoDmRoutes\(server/);
   assert.match(content, /attachSessionIntelligenceRoutes\(server/);
   assert.match(content, /attachRetrievalRoutes\(server/);
   assert.match(content, /attachMapSceneRoutes\(server/);
@@ -25,8 +26,10 @@ test("runtime attaches all production routes and the shared provider control bou
 
 test("build validates every runtime wrapper introduced through Phase 8", async () => {
   const packageJson = JSON.parse(await readFile(packageUrl, "utf8"));
-  assert.equal(packageJson.version, "0.10.0");
+  assert.equal(packageJson.version, "0.11.0");
   for (const modulePath of [
+    "src/co-dm.js",
+    "src/co-dm-http.js",
     "src/discord-http.js",
     "src/discord-security.js",
     "src/session-intelligence.js",
