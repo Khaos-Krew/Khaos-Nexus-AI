@@ -32,6 +32,16 @@ jobs:
         run: node --test tests/discord-api.test.js
       - name: Validate Discord migrations
         run: node --test tests/discord-migration.test.js
+      - name: Validate retrieval contracts
+        run: node --test tests/retrieval.test.js
+      - name: Validate retrieval adapters
+        run: node --test tests/retrieval-store.test.js
+      - name: Validate retrieval HTTP API
+        run: node --test tests/retrieval-api.test.js
+      - name: Validate retrieval Discord flow
+        run: node --test tests/retrieval-discord.test.js
+      - name: Validate retrieval migrations
+        run: node --test tests/retrieval-migration.test.js
       - name: Run full test suite
         run: npm test
       - run: npm run build
