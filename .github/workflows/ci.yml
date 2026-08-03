@@ -18,5 +18,14 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
-      - run: npm test
+      - name: Validate Discord contracts
+        run: node --test tests/discord-bridge.test.js
+      - name: Validate Discord adapters
+        run: node --test tests/discord-adapters.test.js
+      - name: Validate Discord HTTP bridge
+        run: node --test tests/discord-api.test.js
+      - name: Validate Discord migrations
+        run: node --test tests/discord-migration.test.js
+      - name: Run full test suite
+        run: npm test
       - run: npm run build

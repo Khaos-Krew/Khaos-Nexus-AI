@@ -1,5 +1,6 @@
 import { MockAiProvider, OpenAiProvider } from "./ai.js";
 import { createApp } from "./app.js";
+import { LocalDiscordBridge, SupabaseDiscordBridge } from "./discord-adapters.js";
 import { JsonCampaignStore } from "./store.js";
 import {
   SupabaseAuthVerifier,
@@ -36,13 +37,16 @@ function createPersistence() {
   if (storeName === "json") {
     const store = new JsonCampaignStore(process.env.DATA_DIR ?? "./data");
     const authRequired = booleanEnv("AUTH_REQUIRED", false);
-    if (!authRequired) return { store, authVerifier: null, authRequired };
+    const discordBridge = new LocalDiscordBridge();
+    if (!authRequired) {
+      return { store, discordBridge, authVerifier: null, authRequired };
+    }
 
     const authVerifier = new SupabaseAuthVerifier({
       url: process.env.SUPABASE_URL,
       publishableKey: process.env.SUPABASE_PUBLISHABLE_KEY,
     });
-    return { store, authVerifier, authRequired };
+    return { store, discordBridge, authVerifier, authRequired };
   }
 
   if (storeName === "supabase") {
@@ -53,6 +57,7 @@ function createPersistence() {
     const client = new SupabaseRestClient(config);
     return {
       store: new SupabaseCampaignStore(client),
+      discordBridge: new SupabaseDiscordBridge(client),
       authVerifier: new SupabaseAuthVerifier(config),
       authRequired: true,
     };
