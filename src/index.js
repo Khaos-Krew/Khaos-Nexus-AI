@@ -2,6 +2,7 @@ import { MockAiProvider, OpenAiProvider } from "./ai.js";
 import { createApp } from "./app.js";
 import { LocalDiscordBridge, SupabaseDiscordBridge } from "./discord-adapters.js";
 import { attachDiscordRoutes } from "./discord-http.js";
+import { attachDiscordSecurity } from "./discord-security.js";
 import { LocalEncounterEngine } from "./encounter-engine.js";
 import { withSessionIntelligence } from "./session-intelligence-provider.js";
 import { attachSessionIntelligenceRoutes } from "./session-intelligence-http.js";
@@ -101,6 +102,8 @@ attachDiscordRoutes(server, {
   encounterEngine,
   corsOrigin,
 });
+
+attachDiscordSecurity(server, { corsOrigin });
 
 server.listen(port, () => {
   console.log(
