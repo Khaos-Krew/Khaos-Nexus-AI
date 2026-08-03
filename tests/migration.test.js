@@ -1,14 +1,20 @@
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
+import { readFile, readdir } from "node:fs/promises";
 import test from "node:test";
 
-const migrationPath = new URL(
-  "../supabase/migrations/20260803054500_dnd_ai_phase1_auth_rls.sql",
-  import.meta.url,
-);
+const migrationsDirectory = new URL("../supabase/migrations/", import.meta.url);
 
-test("Phase 1 migration fixes combatant ownership and homebrew approval policies", async () => {
-  const sql = await readFile(migrationPath, "utf8");
+async function phaseOneSql() {
+  const files = (await readdir(migrationsDirectory))
+    .filter((file) => /^202608030545\d{2}_dnd_ai_phase1_.*\.sql$/.test(file))
+    .sort();
+  assert.equal(files.length, 4);
+  return (await Promise.all(files.map((file) => readFile(new URL(file, migrationsDirectory), "utf8"))))
+    .join("\n");
+}
+
+test("Phase 1 migrations fix combatant ownership and homebrew approval policies", async () => {
+  const sql = await phaseOneSql();
   assert.match(sql, /c\.campaign_id = dnd_encounter_combatants\.campaign_id/i);
   assert.doesNotMatch(sql, /c\.campaign_id = c\.campaign_id/i);
   assert.match(sql, /status in \('draft', 'submitted'\)/i);
@@ -16,8 +22,8 @@ test("Phase 1 migration fixes combatant ownership and homebrew approval policies
   assert.match(sql, /approved_at is null/i);
 });
 
-test("Phase 1 migration exposes only authenticated RPC wrappers", async () => {
-  const sql = await readFile(migrationPath, "utf8");
+test("Phase 1 migrations expose only authenticated RPC wrappers", async () => {
+  const sql = await phaseOneSql();
   for (const functionName of [
     "dnd_campaign_list",
     "dnd_campaign_workspace",
@@ -33,8 +39,8 @@ test("Phase 1 migration exposes only authenticated RPC wrappers", async () => {
   assert.doesNotMatch(sql, /service_role/i);
 });
 
-test("Phase 1 migration provides filtered player-facing workspace collections", async () => {
-  const sql = await readFile(migrationPath, "utf8");
+test("Phase 1 migrations provide filtered player-facing workspace collections", async () => {
+  const sql = await phaseOneSql();
   assert.match(sql, /v_can_manage or n\.revealed/i);
   assert.match(sql, /v_can_manage or l\.revealed/i);
   assert.match(sql, /v_can_manage or f\.revealed/i);
