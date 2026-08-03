@@ -2,6 +2,10 @@ import { validateDiceRequest } from "./domain.js";
 import { validateEncounterToolRequest } from "./encounter-tools.js";
 import { validateHomebrewRequest } from "./homebrew.js";
 import { validateMapRequest } from "./maps.js";
+import {
+  validateSessionIntelligenceApprovalRequest,
+  validateSessionIntelligenceRequest,
+} from "./session-intelligence.js";
 import { validateWorkspaceToolRequest } from "./workspace-tools.js";
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -55,6 +59,16 @@ function boolean(value, field, defaultValue = false, required = false) {
   if (typeof value !== "boolean") fail(`${field} must be boolean`, field);
   return value;
 }
+function integer(value, field, { required = false, min = 0, max = 1_000_000, defaultValue = 0 } = {}) {
+  if (value === undefined || value === null) {
+    if (required) fail(`${field} is required`, field);
+    return defaultValue;
+  }
+  if (!Number.isInteger(value) || value < min || value > max) {
+    fail(`${field} must be an integer between ${min} and ${max}`, field);
+  }
+  return value;
+}
 function enumValue(value, field, allowed, defaultValue) {
   const normalized = value ?? defaultValue;
   if (!allowed.includes(normalized)) fail(`${field} must be one of: ${allowed.join(", ")}`, field);
@@ -105,6 +119,9 @@ export const discordCommandDefinitions = Object.freeze([
   { name: "encounter_state", description: "Show role-filtered encounter state." },
   { name: "workspace_tool", description: "Execute a manager-authorized campaign workspace tool." },
   { name: "encounter_tool", description: "Execute an authorized encounter mutation." },
+  { name: "session_intelligence", description: "Show role-filtered approved recap or manager intelligence." },
+  { name: "generate_session_intelligence", description: "Generate and optionally save a manager-reviewed session draft." },
+  { name: "approve_session_intelligence", description: "Approve a specific session intelligence revision." },
 ]);
 
 export function validateDiscordCommandRequest(value) {
@@ -152,6 +169,36 @@ export function validateDiscordCommandRequest(value) {
       return { ...base, options: validateWorkspaceToolRequest(options) };
     case "encounter_tool":
       return { ...base, options: validateEncounterToolRequest(options) };
+    case "session_intelligence":
+      keys(options, ["sessionId"], "options");
+      return { ...base, options: { sessionId: uuid(options.sessionId, "options.sessionId", true) } };
+    case "generate_session_intelligence": {
+      keys(options, ["sessionId", "request", "persist", "expectedRevision"], "options");
+      const persist = boolean(options.persist, "options.persist", false);
+      return {
+        ...base,
+        options: {
+          sessionId: uuid(options.sessionId, "options.sessionId", true),
+          request: validateSessionIntelligenceRequest(object(options.request, "options.request")),
+          persist,
+          expectedRevision: integer(options.expectedRevision, "options.expectedRevision", {
+            required: persist,
+            min: 0,
+          }),
+        },
+      };
+    }
+    case "approve_session_intelligence":
+      keys(options, ["sessionId", "expectedRevision"], "options");
+      return {
+        ...base,
+        options: {
+          sessionId: uuid(options.sessionId, "options.sessionId", true),
+          ...validateSessionIntelligenceApprovalRequest({
+            expectedRevision: options.expectedRevision,
+          }),
+        },
+      };
     default:
       fail(`Unsupported Discord command: ${base.command}`, "command");
   }

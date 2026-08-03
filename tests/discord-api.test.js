@@ -92,7 +92,7 @@ test("Discord bridge binds existing channels and renders status and dice respons
 
     const discovery = await jsonRequest(`${baseUrl}/api/v1/discord/commands`);
     assert.equal(discovery.status, 200);
-    assert.equal(discovery.body.commands.length, 8);
+    assert.equal(discovery.body.commands.length, 11);
 
     const status = await jsonRequest(`${baseUrl}/api/v1/discord/commands`, {
       method: "POST",

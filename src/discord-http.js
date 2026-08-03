@@ -92,6 +92,25 @@ function statusResponse(workspace, context) {
   });
 }
 
+async function sessionGenerationContext(store, campaignId, sessionId, auth) {
+  const [campaign, workspace] = await Promise.all([
+    store.get(campaignId, auth),
+    store.getWorkspace(campaignId, auth),
+  ]);
+  if (!campaign || !workspace) {
+    const error = new Error("Campaign not found");
+    error.status = 404;
+    throw error;
+  }
+  const session = workspace.sessions?.find((item) => item.id === sessionId);
+  if (!session) {
+    const error = new Error("Session not found");
+    error.status = 404;
+    throw error;
+  }
+  return { campaign, workspace, session };
+}
+
 async function dispatchCommand(input, context, dependencies) {
   const { store, provider, encounterEngine } = dependencies;
   const campaignId = context.campaignId;
@@ -196,6 +215,77 @@ async function dispatchCommand(input, context, dependencies) {
         content: `Encounter action completed: **${input.options.tool}**`,
         title: "Encounter updated",
         data: { execution },
+        ephemeral: true,
+      });
+    }
+    case "session_intelligence": {
+      const record = await store.getSessionIntelligence(
+        campaignId,
+        input.options.sessionId,
+        dependencies.auth,
+      );
+      if (!record) {
+        const error = new Error("Session not found");
+        error.status = 404;
+        throw error;
+      }
+      const recap = record.canManage
+        ? record.intelligence?.gmRecap
+        : record.intelligence?.playerRecap;
+      return discordResponse({
+        content: recap
+          ? `Session intelligence revision **${record.revision}**${record.approved ? " • approved" : " • draft"}`
+          : "No visible session intelligence is available.",
+        title: record.session?.title ?? "Session intelligence",
+        description: recap ?? "A campaign manager has not approved a player recap yet.",
+        data: { record },
+        ephemeral: record.canManage || context.binding.purpose === "dm_private",
+      });
+    }
+    case "generate_session_intelligence": {
+      if (!context.canManage) throw permissionError("Campaign management permission is required");
+      const generationContext = await sessionGenerationContext(
+        store,
+        campaignId,
+        input.options.sessionId,
+        dependencies.auth,
+      );
+      const result = await provider.generateSessionIntelligence(
+        generationContext,
+        input.options.request,
+      );
+      const record = input.options.persist
+        ? await store.saveSessionIntelligence(
+            campaignId,
+            input.options.sessionId,
+            result,
+            input.options.expectedRevision,
+            dependencies.auth,
+          )
+        : null;
+      return discordResponse({
+        content: record
+          ? `Session intelligence saved as revision **${record.revision}**.`
+          : "Session intelligence generated for manager review.",
+        title: result.sessionTitle,
+        description: result.gmRecap,
+        data: { result, record },
+        ephemeral: true,
+      });
+    }
+    case "approve_session_intelligence": {
+      if (!context.canManage) throw permissionError("Campaign management permission is required");
+      const record = await store.approveSessionIntelligence(
+        campaignId,
+        input.options.sessionId,
+        input.options.expectedRevision,
+        dependencies.auth,
+      );
+      return discordResponse({
+        content: `Approved session intelligence revision **${record.revision}**.`,
+        title: record.session?.title ?? "Session intelligence approved",
+        description: record.intelligence?.playerRecap ?? "Player recap approved.",
+        data: { record },
         ephemeral: true,
       });
     }
