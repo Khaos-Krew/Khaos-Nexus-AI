@@ -49,6 +49,7 @@ function localWorkspace(campaign) {
 class LocalHomebrewStore {
   constructor() {
     this.homebrew = new Map();
+    this.workspaceRecords = new Map();
   }
 
   createHomebrewRecord(campaignId, result) {
@@ -84,6 +85,54 @@ class LocalHomebrewStore {
     return [...this.homebrew.values()]
       .filter((record) => record.campaign_id === campaignId)
       .map((record) => structuredClone(record));
+  }
+
+  workspaceFor(campaignId) {
+    if (!this.workspaceRecords.has(campaignId)) {
+      this.workspaceRecords.set(campaignId, {
+        npcs: [], locations: [], factions: [], quests: [], loot: [], sessions: [], calendarEvents: [],
+      });
+    }
+    return this.workspaceRecords.get(campaignId);
+  }
+
+  executeWorkspaceToolRecord(campaignId, tool, args) {
+    const workspace = this.workspaceFor(campaignId);
+    const now = new Date().toISOString();
+    const upsert = (collection, values) => {
+      const id = values.id ?? randomUUID();
+      const index = collection.findIndex((item) => item.id === id);
+      const record = { ...(index >= 0 ? collection[index] : {}), ...structuredClone(values), id, updated_at: now };
+      if (index >= 0) collection[index] = record;
+      else collection.push({ ...record, created_at: now });
+      return structuredClone(record);
+    };
+
+    switch (tool) {
+      case "upsert_npc":
+        return { tool, record: upsert(workspace.npcs, args) };
+      case "upsert_location":
+        return { tool, record: upsert(workspace.locations, args) };
+      case "upsert_faction":
+        return { tool, record: upsert(workspace.factions, args) };
+      case "upsert_quest":
+        return { tool, record: upsert(workspace.quests, args) };
+      case "upsert_loot":
+        return { tool, record: upsert(workspace.loot, args) };
+      case "upsert_session":
+        return { tool, record: upsert(workspace.sessions, args) };
+      case "approve_session_recap": {
+        const session = workspace.sessions.find((item) => item.id === args.sessionId);
+        if (!session) return null;
+        session.recapApprovedAt = now;
+        session.updated_at = now;
+        return { tool, record: structuredClone(session) };
+      }
+      case "upsert_calendar_event":
+        return { tool, record: upsert(workspace.calendarEvents, args) };
+      default:
+        throw new Error(`Unsupported workspace tool: ${tool}`);
+    }
   }
 }
 
@@ -147,7 +196,10 @@ export class JsonCampaignStore extends LocalHomebrewStore {
 
   async getWorkspace(id) {
     const workspace = localWorkspace(await this.get(id));
-    if (workspace) workspace.homebrew = this.listHomebrew(id);
+    if (workspace) {
+      workspace.homebrew = this.listHomebrew(id);
+      Object.assign(workspace, structuredClone(this.workspaceFor(id)));
+    }
     return workspace;
   }
 
@@ -157,6 +209,10 @@ export class JsonCampaignStore extends LocalHomebrewStore {
 
   async approveHomebrew(campaignId, homebrewId) {
     return this.approveHomebrewRecord(campaignId, homebrewId);
+  }
+
+  async executeWorkspaceTool(campaignId, tool, args) {
+    return this.executeWorkspaceToolRecord(campaignId, tool, args);
   }
 }
 
@@ -194,7 +250,10 @@ export class MemoryCampaignStore extends LocalHomebrewStore {
 
   async getWorkspace(id) {
     const workspace = localWorkspace(await this.get(id));
-    if (workspace) workspace.homebrew = this.listHomebrew(id);
+    if (workspace) {
+      workspace.homebrew = this.listHomebrew(id);
+      Object.assign(workspace, structuredClone(this.workspaceFor(id)));
+    }
     return workspace;
   }
 
@@ -204,5 +263,9 @@ export class MemoryCampaignStore extends LocalHomebrewStore {
 
   async approveHomebrew(campaignId, homebrewId) {
     return this.approveHomebrewRecord(campaignId, homebrewId);
+  }
+
+  async executeWorkspaceTool(campaignId, tool, args) {
+    return this.executeWorkspaceToolRecord(campaignId, tool, args);
   }
 }
