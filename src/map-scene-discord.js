@@ -1,3 +1,4 @@
+import { Readable } from "node:stream";
 import {
   createAdvancedMapScene,
   createMapSceneExport,
@@ -167,6 +168,18 @@ async function readJson(request) {
   }
 }
 
+function replayRequest(request, body) {
+  const replay = Readable.from([Buffer.from(JSON.stringify(body), "utf8")]);
+  replay.url = request.url;
+  replay.method = request.method;
+  replay.headers = request.headers;
+  replay.rawHeaders = request.rawHeaders;
+  replay.httpVersion = request.httpVersion;
+  replay.socket = request.socket;
+  replay.connection = request.connection;
+  return replay;
+}
+
 async function authenticate(request, { store, authVerifier, authRequired }) {
   const token = extractBearerToken(request);
   if (!token) {
@@ -307,8 +320,8 @@ export function attachMapSceneDiscordRoutes(server, {
       const body = await readJson(request);
       const input = mapCommand(body);
       if (!input) {
-        request.body = body;
-        for (const listener of baseListeners) listener.call(server, request, response);
+        const replay = replayRequest(request, body);
+        for (const listener of baseListeners) listener.call(server, replay, response);
         return;
       }
       const auth = await authenticate(request, { store, authVerifier, authRequired });
