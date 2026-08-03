@@ -11,6 +11,10 @@ const migrationUrls = [
     "../supabase/migrations/20260803155600_dnd_ai_phase5_session_intelligence_hardening.sql",
     import.meta.url,
   ),
+  new URL(
+    "../supabase/migrations/20260803155700_dnd_ai_phase5_private_function_grants.sql",
+    import.meta.url,
+  ),
 ];
 
 async function sql() {
@@ -69,7 +73,7 @@ test("Phase 5 saves and approvals are manager-only, revision-locked, and audited
   assert.match(content, /insert into public\.dnd_audit_log/i);
 });
 
-test("Phase 5 public RPCs are authenticated-only", async () => {
+test("Phase 5 public and private RPCs deny anonymous execution", async () => {
   const content = await sql();
   for (const signature of [
     "dnd_ai_session_intelligence\\(uuid,uuid\\)",
@@ -78,6 +82,11 @@ test("Phase 5 public RPCs are authenticated-only", async () => {
   ]) {
     assert.match(content, new RegExp(`revoke all on function public\\.${signature} from public, anon`, "i"));
     assert.match(content, new RegExp(`grant execute on function public\\.${signature} to authenticated`, "i"));
+    assert.match(content, new RegExp(`revoke all on function private\\.${signature} from public, anon`, "i"));
   }
+  assert.match(
+    content,
+    /revoke all on function private\.dnd_ai_public_session_intelligence\(jsonb\) from public, anon/i,
+  );
   assert.doesNotMatch(content, /grant execute[^;]+to anon/i);
 });
