@@ -6,6 +6,7 @@ import {
   validateDiscordBindingVerification,
   validateDiscordCommandRequest,
 } from "./discord-bridge.js";
+import { retrievalCopyrightNotice, validateRetrievalResult } from "./retrieval.js";
 import { extractBearerToken } from "./supabase.js";
 
 const MAX_BODY_BYTES = 256 * 1024;
@@ -109,6 +110,16 @@ async function sessionGenerationContext(store, campaignId, sessionId, auth) {
     throw error;
   }
   return { campaign, workspace, session };
+}
+
+function retrievalDescription(retrieval) {
+  if (!retrieval.results.length) return "No authorized campaign results matched this search.";
+  return retrieval.results.slice(0, 5).map((result, index) => [
+    `**${index + 1}. ${result.name}**`,
+    result.excerpt || "No excerpt available.",
+    `Citation: \`${result.citationId}\``,
+    result.attributionText ? `Attribution: ${result.attributionText}` : "",
+  ].filter(Boolean).join("\n")).join("\n\n");
 }
 
 async function dispatchCommand(input, context, dependencies) {
@@ -287,6 +298,18 @@ async function dispatchCommand(input, context, dependencies) {
         description: record.intelligence?.playerRecap ?? "Player recap approved.",
         data: { record },
         ephemeral: true,
+      });
+    }
+    case "search_knowledge": {
+      const retrieval = validateRetrievalResult(
+        await store.searchRetrieval(campaignId, input.options, dependencies.auth),
+      );
+      return discordResponse({
+        content: `Found **${retrieval.results.length}** authorized result${retrieval.results.length === 1 ? "" : "s"}.`,
+        title: "Authorized campaign knowledge",
+        description: `${retrievalDescription(retrieval)}\n\n${retrievalCopyrightNotice()}`,
+        data: { retrieval },
+        ephemeral: context.binding.purpose === "dm_private",
       });
     }
     default:
