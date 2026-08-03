@@ -6,6 +6,7 @@ import {
   validateDiceRequest,
   validateTurnRequest,
 } from "./domain.js";
+import { validateHomebrewRequest } from "./homebrew.js";
 
 const MAX_BODY_BYTES = 256 * 1024;
 
@@ -182,6 +183,26 @@ export function createApp({ store, provider, corsOrigin = "http://localhost:3000
           response,
           200,
           { result, campaign, meta: { provider: provider.name, model: provider.model } },
+          origin,
+        );
+        return;
+      }
+
+      if (request.method === "POST" && pathname === "/api/v1/homebrew/generations") {
+        const input = validateHomebrewRequest(await readJson(request));
+        const result = await provider.generateHomebrew(input);
+        sendJson(
+          response,
+          200,
+          {
+            result,
+            meta: {
+              provider: provider.name,
+              model: provider.model,
+              rawInspirationStored: false,
+              generatedAt: new Date().toISOString(),
+            },
+          },
           origin,
         );
         return;
