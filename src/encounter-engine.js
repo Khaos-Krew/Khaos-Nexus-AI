@@ -1,6 +1,9 @@
 import { randomUUID } from "node:crypto";
 
-function clone(value) { return structuredClone(value); }
+function clone(value) {
+  return structuredClone(value);
+}
+
 function orderCombatants(encounter) {
   return [...encounter.combatants.values()]
     .filter((combatant) => combatant.active)
@@ -11,6 +14,7 @@ function orderCombatants(encounter) {
       a.id.localeCompare(b.id),
     );
 }
+
 function state(encounter) {
   if (!encounter) return null;
   return {
@@ -32,24 +36,31 @@ function state(encounter) {
 }
 
 export class LocalEncounterEngine {
-  constructor() { this.campaigns = new Map(); }
+  constructor() {
+    this.campaigns = new Map();
+  }
+
   campaign(id) {
     if (!this.campaigns.has(id)) this.campaigns.set(id, new Map());
     return this.campaigns.get(id);
   }
+
   getState(campaignId, encounterId) {
     return state(this.campaign(campaignId).get(encounterId));
   }
+
   execute(campaignId, tool, args) {
     const encounters = this.campaign(campaignId);
     const now = () => new Date().toISOString();
     let encounter;
     let combatant;
+
     const getEncounter = (id) => {
       const result = encounters.get(id);
       if (!result) throw new Error("Encounter not found");
       return result;
     };
+
     const getCombatant = (id) => {
       for (const result of encounters.values()) {
         const member = result.combatants.get(id);
@@ -62,9 +73,17 @@ export class LocalEncounterEngine {
       case "create_encounter": {
         const timestamp = now();
         encounter = {
-          id: randomUUID(), campaignId, sessionId: args.sessionId, name: args.name,
-          status: args.status, round: 1, currentTurnIndex: 0, metadata: args.metadata,
-          createdAt: timestamp, updatedAt: timestamp, combatants: new Map(),
+          id: randomUUID(),
+          campaignId,
+          sessionId: args.sessionId,
+          name: args.name,
+          status: args.status,
+          round: 1,
+          currentTurnIndex: 0,
+          metadata: args.metadata,
+          createdAt: timestamp,
+          updatedAt: timestamp,
+          combatants: new Map(),
         };
         encounters.set(encounter.id, encounter);
         return { tool, encounterId: encounter.id, result: state(encounter) };
@@ -75,22 +94,40 @@ export class LocalEncounterEngine {
           throw new Error("Cannot start an encounter without active combatants");
         }
         encounter.status = args.status;
-        if (args.status === "active") { encounter.round = 1; encounter.currentTurnIndex = 0; }
+        if (args.status === "active") {
+          encounter.round = 1;
+          encounter.currentTurnIndex = 0;
+        }
         break;
       case "add_combatant": {
         encounter = getEncounter(args.encounterId);
         const timestamp = now();
         combatant = {
-          id: randomUUID(), characterId: args.characterId, npcId: args.npcId,
-          name: args.name || "Combatant", initiative: args.initiative, dexterity: args.dexterity,
-          hp: args.hp, maxHp: args.maxHp, tempHp: args.tempHp, armorClass: args.armorClass,
-          conditions: [], conditionDetails: {}, concentration: {}, reactionAvailable: true,
-          deathSaveSuccesses: 0, deathSaveFailures: 0,
+          id: randomUUID(),
+          characterId: args.characterId,
+          npcId: args.npcId,
+          name: args.name || "Combatant",
+          initiative: args.initiative,
+          dexterity: args.dexterity,
+          hp: Object.hasOwn(args, "hp") ? args.hp : null,
+          maxHp: Object.hasOwn(args, "maxHp") ? args.maxHp : null,
+          tempHp: args.tempHp,
+          armorClass: Object.hasOwn(args, "armorClass") ? args.armorClass : null,
+          conditions: [],
+          conditionDetails: {},
+          concentration: {},
+          reactionAvailable: true,
+          deathSaveSuccesses: 0,
+          deathSaveFailures: 0,
           legendaryActionsMax: args.legendaryActionsMax,
           legendaryActionsRemaining: args.legendaryActionsMax,
-          isLairActor: args.isLairActor, hidden: args.hidden, active: true,
-          metadata: { ...args.metadata, team: args.team }, revision: 1,
-          joinedAt: timestamp, updatedAt: timestamp,
+          isLairActor: args.isLairActor,
+          hidden: args.hidden,
+          active: true,
+          metadata: { ...args.metadata, team: args.team },
+          revision: 1,
+          joinedAt: timestamp,
+          updatedAt: timestamp,
         };
         encounter.combatants.set(combatant.id, combatant);
         encounter.updatedAt = timestamp;
@@ -107,8 +144,14 @@ export class LocalEncounterEngine {
         const ordered = orderCombatants(encounter);
         if (!ordered.length) throw new Error("Encounter has no active combatants");
         let next = encounter.currentTurnIndex + (tool === "advance_turn" ? 1 : -1);
-        if (next >= ordered.length) { next = 0; encounter.round += 1; }
-        if (next < 0) { next = ordered.length - 1; encounter.round = Math.max(1, encounter.round - 1); }
+        if (next >= ordered.length) {
+          next = 0;
+          encounter.round += 1;
+        }
+        if (next < 0) {
+          next = ordered.length - 1;
+          encounter.round = Math.max(1, encounter.round - 1);
+        }
         encounter.currentTurnIndex = next;
         ordered[next].reactionAvailable = true;
         ordered[next].legendaryActionsRemaining = ordered[next].legendaryActionsMax;
@@ -192,7 +235,10 @@ export class LocalEncounterEngine {
     }
 
     const timestamp = now();
-    if (combatant) { combatant.revision += 1; combatant.updatedAt = timestamp; }
+    if (combatant) {
+      combatant.revision += 1;
+      combatant.updatedAt = timestamp;
+    }
     if (encounter) encounter.updatedAt = timestamp;
     return {
       tool,
