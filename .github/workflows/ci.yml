@@ -62,6 +62,12 @@ jobs:
         run: node --test tests/production-control-api.test.js
       - name: Validate Phase 8 database safeguards
         run: node --test tests/production-control-migration.test.js
+      - name: Validate desktop Co-DM contract
+        run: node --test tests/co-dm.test.js
+      - name: Validate desktop Co-DM HTTP integration
+        run: node --test tests/co-dm-api.test.js
+      - name: Validate desktop Co-DM policy migration
+        run: node --test tests/co-dm-migration.test.js
       - name: Run full test suite
         run: npm test
       - name: Validate syntax and runtime composition
