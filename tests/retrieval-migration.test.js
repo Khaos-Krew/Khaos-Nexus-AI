@@ -31,7 +31,10 @@ test("Phase 6 source management requires managers and explicit license evidence"
   assert.match(content, /Attribution is required for SRD CC BY sources/i);
   assert.match(content, /rights or entitlement reference is required/i);
   assert.match(content, /external reference URL is required/i);
-  assert.match(content, /and p_license_type in \('srd_cc_by','user_authored','user_supplied_private','partner_api'\)/i);
+  assert.match(
+    content,
+    /and\s+p_license_type\s+in\s*\('srd_cc_by','user_authored','user_supplied_private','partner_api'\)/i,
+  );
   assert.match(content, /ai\.retrieval\.source_upserted/i);
 });
 
@@ -44,31 +47,33 @@ test("Phase 6 ingestion enforces tenant, origin, full-text, size, hash, and audi
   assert.match(content, /Partner API content requires a partner API source/i);
   assert.match(content, /External reference content requires an external-link source/i);
   assert.match(content, /Restricted sources may store summaries and metadata only/i);
-  assert.match(content, /v_hash := md5/i);
-  assert.match(content, /content_hash = v_hash and active/i);
+  assert.match(content, /v_hash\s*:=\s*md5/i);
+  assert.match(content, /content_hash\s*=\s*v_hash\s+and\s+active/i);
   assert.match(content, /ai\.retrieval\.entry_upserted/i);
 });
 
 test("Phase 6 search is campaign-scoped, visibility-filtered, cited, and excerpt-limited", async () => {
   const content = await sql();
-  assert.match(content, /cs\.campaign_id = p_campaign_id\s+and cs\.enabled/i);
-  assert.match(content, /v_can_manage or s\.visibility = 'campaign_members'/i);
-  assert.match(content, /e\.visibility = 'campaign_members'/i);
-  assert.match(content, /h\.status = 'approved' or v_can_manage/i);
-  assert.match(content, /v_can_manage or s\.intelligence_approved_at is not null/i);
-  assert.match(content, /left\(case[\s\S]+end, 700\) as excerpt/i);
-  assert.match(content, /'source:' \|\| s\.id::text \|\| ':entry:' \|\| e\.id::text/i);
-  assert.match(content, /'homebrew:' \|\| h\.id::text \|\| ':revision:' \|\| h\.revision::text/i);
-  assert.match(content, /'session:' \|\| s\.id::text \|\| ':intelligence:' \|\| s\.intelligence_revision::text/i);
-  assert.match(content, /greatest\(1, least\(coalesce\(p_limit,8\), 10\)\)/i);
+  assert.match(content, /cs\.campaign_id\s*=\s*p_campaign_id\s+and\s+cs\.enabled/i);
+  assert.match(content, /v_can_manage\s+or\s+s\.visibility\s*=\s*'campaign_members'/i);
+  assert.match(content, /e\.visibility\s*=\s*'campaign_members'/i);
+  assert.match(content, /h\.status\s*=\s*'approved'\s+or\s+v_can_manage/i);
+  assert.match(content, /v_can_manage\s+or\s+s\.intelligence_approved_at\s+is\s+not\s+null/i);
+  assert.match(content, /left\(case[\s\S]+end,\s*700\)\s+as\s+excerpt/i);
+  assert.match(content, /'source:'\s*\|\|\s*s\.id::text\s*\|\|\s*':entry:'\s*\|\|\s*e\.id::text/i);
+  assert.match(content, /'homebrew:'\s*\|\|\s*h\.id::text\s*\|\|\s*':revision:'\s*\|\|\s*h\.revision::text/i);
+  assert.match(content, /'session:'\s*\|\|\s*s\.id::text\s*\|\|\s*':intelligence:'\s*\|\|\s*s\.intelligence_revision::text/i);
+  assert.match(content, /greatest\(1,\s*least\(coalesce\(p_limit,8\),\s*10\)\)/i);
 });
 
 test("Phase 6 rejects reconstruction searches and audits only a query hash", async () => {
   const content = await sql();
   assert.match(content, /Retrieval cannot be used to reconstruct or export source text/i);
-  assert.match(content, /verbatim\|exact\[ -\]\?copy\|full\[ -\]\?text/i);
-  assert.match(content, /'queryHash', md5\(v_query\)/i);
-  assert.match(content, /'resultCount', jsonb_array_length\(v_results\)/i);
+  for (const safeguard of ["verbatim", "exact[ -]?copy", "full[ -]?text", "reconstruct", "continue[ ]+from"]) {
+    assert.ok(content.includes(safeguard), `missing reconstruction safeguard: ${safeguard}`);
+  }
+  assert.match(content, /'queryHash',\s*md5\(v_query\)/i);
+  assert.match(content, /'resultCount',\s*jsonb_array_length\(v_results\)/i);
   assert.match(content, /ai\.retrieval\.searched/i);
 });
 
@@ -81,9 +86,9 @@ test("Phase 6 public and private RPCs deny anonymous execution", async () => {
     "dnd_ai_search_retrieval\\(uuid,text,integer\\)",
   ];
   for (const signature of signatures) {
-    assert.match(content, new RegExp(`revoke all on function public\\.${signature} from public, anon`, "i"));
-    assert.match(content, new RegExp(`revoke all on function private\\.${signature} from public, anon`, "i"));
-    assert.match(content, new RegExp(`grant execute on function public\\.${signature} to authenticated`, "i"));
+    assert.match(content, new RegExp(`revoke\\s+all\\s+on\\s+function\\s+public\\.${signature}\\s+from\\s+public,\\s*anon`, "i"));
+    assert.match(content, new RegExp(`revoke\\s+all\\s+on\\s+function\\s+private\\.${signature}\\s+from\\s+public,\\s*anon`, "i"));
+    assert.match(content, new RegExp(`grant\\s+execute\\s+on\\s+function\\s+public\\.${signature}\\s+to\\s+authenticated`, "i"));
   }
   assert.doesNotMatch(content, /grant execute[^;]+to anon/i);
 });
