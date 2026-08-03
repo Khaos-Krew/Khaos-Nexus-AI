@@ -31,10 +31,7 @@ test("Phase 3 migration adds explicit combat-state fields and stable initiative 
   ]) {
     assert.match(content, new RegExp(`add column if not exists ${column}`, "i"));
   }
-  assert.match(
-    content,
-    /initiative desc, dexterity desc, joined_at, id/i,
-  );
+  assert.match(content, /initiative desc, dexterity desc, joined_at, id/i);
 });
 
 test("Phase 3 migration filters hidden combatants and restricts player mutations", async () => {
@@ -45,7 +42,8 @@ test("Phase 3 migration filters hidden combatants and restricts player mutations
     /v_owns_combatant and p_tool in \('set_concentration', 'set_reaction', 'record_death_save'\)/i,
   );
   assert.match(content, /not private\.dnd_can_view_campaign\(p_campaign_id\)/i);
-  assert.match(content, /not private\.dnd_can_manage_campaign\(p_campaign_id\)/i);
+  assert.match(content, /v_can_manage := private\.dnd_can_manage_campaign\(p_campaign_id\)/i);
+  assert.match(content, /if not v_can_manage and not \(/i);
 });
 
 test("Phase 3 migration locks state, applies temporary HP, and audits every mutation", async () => {
