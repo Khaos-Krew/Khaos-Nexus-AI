@@ -17,7 +17,7 @@ const intelligence = {
   ],
   contradictions: [],
   unresolvedThreads: [
-    { thread: "Repair the crucible.", status: "open", public: true, notes: "" },
+    { thread: "Repair the crucible.", status: "open", public: true, notes: "Public objective with private source notes." },
     { thread: "Find the saboteur.", status: "open", public: false, notes: "" },
   ],
   entityChanges: [],
@@ -72,13 +72,15 @@ test("local session intelligence saves, resets approval, and filters players", a
   );
   assert.equal(player.intelligence.playerRecap, intelligence.playerRecap);
   assert.equal(player.intelligence.canonFacts.length, 1);
+  assert.deepEqual(Object.keys(player.intelligence.canonFacts[0]).sort(), ["confidence", "statement"]);
+  assert.deepEqual(Object.keys(player.intelligence.unresolvedThreads[0]).sort(), ["status", "thread"]);
   assert.equal("gmRecap" in player.intelligence, false);
 
   const changed = { ...intelligence, playerRecap: "Updated public recap." };
   const second = await store.saveSessionIntelligence(CAMPAIGN_ID, SESSION_ID, changed, 1);
   assert.equal(second.revision, 2);
   assert.equal(second.approved, false);
-  assert.throws(
+  await assert.rejects(
     () => store.saveSessionIntelligence(CAMPAIGN_ID, SESSION_ID, changed, 1),
     /reload before saving/,
   );
