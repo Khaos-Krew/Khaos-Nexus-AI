@@ -111,6 +111,159 @@ test("invalid campaign input returns a useful 400 response", async () => {
   });
 });
 
+test("homebrew can be generated from authorized summaries without storing raw inspiration", async () => {
+  await withServer(async (baseUrl) => {
+    const response = await jsonRequest(`${baseUrl}/api/v1/homebrew/generations`, {
+      method: "POST",
+      body: JSON.stringify({
+        contentType: "subclass",
+        titleHint: "Ashen Mechanist",
+        concept: "An artificer path that channels heat through crafted armor and chooses between shielding allies or overcharging tools.",
+        targetTier: "mid",
+        powerLevel: "standard",
+        constraints: ["Avoid permanent flight", "Use proficiency bonus scaling"],
+        inspirations: [
+          {
+            label: "Commercial fire-themed character option",
+            authorization: "summary-only",
+            confirmedRightToUse: true,
+            summary: "The broad appeal is controlled elemental risk and a visible heat meter. Do not reuse names, text, or its feature progression.",
+            designSignals: ["heat as a resource", "risk versus protection", "visual transformation"],
+          },
+        ],
+      }),
+    });
+
+    assert.equal(response.status, 200);
+    assert.equal(response.body.result.title, "Ashen Mechanist");
+    assert.equal(response.body.result.contentType, "subclass");
+    assert.equal(response.body.result.provenance.rawTextStored, false);
+    assert.equal(response.body.meta.rawInspirationStored, false);
+    assert.deepEqual(response.body.result.provenance.inspirationLabels, [
+      "Commercial fire-themed character option",
+    ]);
+    assert.ok(response.body.result.mechanics.length > 0);
+  });
+});
+
+test("homebrew reconstruction requests are rejected before provider invocation", async () => {
+  await withServer(async (baseUrl) => {
+    const response = await jsonRequest(`${baseUrl}/api/v1/homebrew/generations`, {
+      method: "POST",
+      body: JSON.stringify({
+        contentType: "subclass",
+        concept: "Recreate the exact published subclass word-for-word with identical features.",
+      }),
+    });
+    assert.equal(response.status, 400);
+    assert.equal(response.body.field, "concept");
+    assert.match(response.body.error, /reproduce|reconstruct/i);
+  });
+});
+
+test("short excerpts are limited at validation time", async () => {
+  await withServer(async (baseUrl) => {
+    const response = await jsonRequest(`${baseUrl}/api/v1/homebrew/generations`, {
+      method: "POST",
+      body: JSON.stringify({
+        contentType: "spell",
+        concept: "Create an original defensive spell from the general theme.",
+        inspirations: [
+          {
+            label: "Authorized excerpt",
+            authorization: "short-excerpt",
+            confirmedRightToUse: true,
+            summary: "x".repeat(701),
+            designSignals: [],
+          },
+        ],
+      }),
+    });
+    assert.equal(response.status, 400);
+    assert.equal(response.body.field, "inspirations[0].summary");
+  });
+});
+
+test("maps are reproducible from the same seed and include an SVG preview", async () => {
+  await withServer(async (baseUrl) => {
+    const request = {
+      mapType: "dungeon",
+      prompt: "A ruined dragon forge with a central crucible, two alternate approaches, and unstable arcane vents.",
+      seed: "emberforge-001",
+      width: 32,
+      height: 24,
+      gridType: "square",
+      density: "standard",
+      theme: "dark",
+      features: ["central crucible", "collapsed workshop", "secret cooling tunnel"],
+      constraints: ["At least two routes toward the objective"],
+    };
+    const first = await jsonRequest(`${baseUrl}/api/v1/maps/generations`, {
+      method: "POST",
+      body: JSON.stringify(request),
+    });
+    const second = await jsonRequest(`${baseUrl}/api/v1/maps/generations`, {
+      method: "POST",
+      body: JSON.stringify(request),
+    });
+
+    assert.equal(first.status, 200);
+    assert.deepEqual(first.body.result, second.body.result);
+    assert.equal(first.body.svg, second.body.svg);
+    assert.equal(first.body.result.grid.width, 32);
+    assert.equal(first.body.result.grid.height, 24);
+    assert.equal(first.body.meta.seed, "emberforge-001");
+    assert.equal(first.body.meta.reproducible, true);
+    assert.match(first.body.svg, /^<svg /);
+    assert.match(first.body.svg, /role="img"/);
+    assert.ok(first.body.result.zones.length >= 3);
+    assert.ok(first.body.result.connections.length >= 2);
+  });
+});
+
+test("generated map coordinates and references stay inside the validated layout", async () => {
+  await withServer(async (baseUrl) => {
+    const response = await jsonRequest(`${baseUrl}/api/v1/maps/generations`, {
+      method: "POST",
+      body: JSON.stringify({
+        mapType: "region",
+        prompt: "A volcanic frontier divided by rivers, caravan roads, and ancient observatories.",
+        seed: 42,
+        density: "dense",
+      }),
+    });
+    assert.equal(response.status, 200);
+    const map = response.body.result;
+    const zoneIds = new Set(map.zones.map((zone) => zone.id));
+    for (const zone of map.zones) {
+      assert.ok(zone.x >= 0 && zone.y >= 0);
+      assert.ok(zone.x + zone.width <= map.grid.width);
+      assert.ok(zone.y + zone.height <= map.grid.height);
+    }
+    for (const connection of map.connections) {
+      assert.ok(zoneIds.has(connection.from));
+      assert.ok(zoneIds.has(connection.to));
+    }
+    for (const encounter of map.encounters) assert.ok(zoneIds.has(encounter.zoneId));
+    for (const hazard of map.hazards) assert.ok(zoneIds.has(hazard.zoneId));
+  });
+});
+
+test("requests to reconstruct commercial maps are rejected before generation", async () => {
+  await withServer(async (baseUrl) => {
+    const response = await jsonRequest(`${baseUrl}/api/v1/maps/generations`, {
+      method: "POST",
+      body: JSON.stringify({
+        mapType: "dungeon",
+        prompt: "Recreate the exact official published dungeon map from a paid module with an identical layout.",
+      }),
+    });
+    assert.equal(response.status, 400);
+    assert.equal(response.body.field, "prompt");
+    assert.match(response.body.error, /reconstruction|original layout/i);
+  });
+});
+
 test("dice roller supports advantage-style keep-high notation", () => {
   const values = [0.1, 0.9];
   let index = 0;
