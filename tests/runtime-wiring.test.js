@@ -5,19 +5,22 @@ import test from "node:test";
 const indexUrl = new URL("../src/index.js", import.meta.url);
 const packageUrl = new URL("../package.json", import.meta.url);
 
-test("runtime attaches Discord, session intelligence, and authorized retrieval routes", async () => {
+test("runtime attaches Discord, session intelligence, retrieval, and advanced map scene routes", async () => {
   const content = await readFile(indexUrl, "utf8");
   assert.match(content, /withSessionIntelligence\(new MockAiProvider\(\)\)/);
   assert.match(content, /withSessionIntelligenceStore\(/);
   assert.match(content, /withRetrievalStore\(/);
+  assert.match(content, /withMapSceneStore\(/);
   assert.match(content, /attachSessionIntelligenceRoutes\(server/);
   assert.match(content, /attachRetrievalRoutes\(server/);
+  assert.match(content, /attachMapSceneRoutes\(server/);
   assert.match(content, /attachDiscordRoutes\(server/);
+  assert.match(content, /attachMapSceneDiscordRoutes\(server/);
   assert.match(content, /attachDiscordSecurity\(server/);
   assert.match(content, /encounterEngine/);
 });
 
-test("build validates every runtime wrapper introduced through Phase 6", async () => {
+test("build validates every runtime wrapper introduced through Phase 7", async () => {
   const packageJson = JSON.parse(await readFile(packageUrl, "utf8"));
   for (const modulePath of [
     "src/discord-http.js",
@@ -31,6 +34,10 @@ test("build validates every runtime wrapper introduced through Phase 6", async (
     "src/retrieval.js",
     "src/retrieval-store.js",
     "src/retrieval-http.js",
+    "src/map-scenes.js",
+    "src/map-scene-store.js",
+    "src/map-scene-http.js",
+    "src/map-scene-discord.js",
   ]) {
     assert.match(packageJson.scripts.build, new RegExp(modulePath.replaceAll(".", "\\.")));
   }

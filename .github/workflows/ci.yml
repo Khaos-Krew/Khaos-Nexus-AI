@@ -42,6 +42,17 @@ jobs:
         run: node --test tests/retrieval-discord.test.js
       - name: Validate retrieval migrations
         run: node --test tests/retrieval-migration.test.js
+      - name: Validate advanced map scene contracts
+        run: node --test tests/map-scenes.test.js
+      - name: Validate advanced map scene persistence
+        run: node --test tests/map-scene-store.test.js
+      - name: Validate advanced map scene HTTP API
+        run: node --test tests/map-scene-api.test.js
+      - name: Validate advanced map scene Discord flow
+        run: node --test tests/map-scene-discord.test.js
+      - name: Validate advanced map scene migrations
+        run: node --test tests/map-scene-migration.test.js
       - name: Run full test suite
         run: npm test
-      - run: npm run build
+      - name: Validate syntax and runtime composition
+        run: npm run build

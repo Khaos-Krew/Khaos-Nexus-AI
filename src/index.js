@@ -4,6 +4,9 @@ import { LocalDiscordBridge, SupabaseDiscordBridge } from "./discord-adapters.js
 import { attachDiscordRoutes } from "./discord-http.js";
 import { attachDiscordSecurity } from "./discord-security.js";
 import { LocalEncounterEngine } from "./encounter-engine.js";
+import { attachMapSceneDiscordRoutes } from "./map-scene-discord.js";
+import { attachMapSceneRoutes } from "./map-scene-http.js";
+import { withMapSceneStore } from "./map-scene-store.js";
 import { attachRetrievalRoutes } from "./retrieval-http.js";
 import { withRetrievalStore } from "./retrieval-store.js";
 import { withSessionIntelligence } from "./session-intelligence-provider.js";
@@ -41,7 +44,7 @@ function createProvider() {
 }
 
 function decorateStore(store) {
-  return withRetrievalStore(withSessionIntelligenceStore(store));
+  return withMapSceneStore(withRetrievalStore(withSessionIntelligenceStore(store)));
 }
 
 function createPersistence() {
@@ -105,10 +108,22 @@ attachRetrievalRoutes(server, {
   corsOrigin,
 });
 
+attachMapSceneRoutes(server, {
+  ...persistence,
+  provider,
+  corsOrigin,
+});
+
 attachDiscordRoutes(server, {
   ...persistence,
   provider,
   encounterEngine,
+  corsOrigin,
+});
+
+attachMapSceneDiscordRoutes(server, {
+  ...persistence,
+  provider,
   corsOrigin,
 });
 
