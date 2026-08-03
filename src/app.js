@@ -9,6 +9,7 @@ import {
 import { validateHomebrewRequest } from "./homebrew.js";
 import { renderMapSvg, validateMapRequest } from "./maps.js";
 import { extractBearerToken } from "./supabase.js";
+import { validateWorkspaceToolRequest, workspaceToolDefinitions } from "./workspace-tools.js";
 
 const MAX_BODY_BYTES = 256 * 1024;
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -183,6 +184,11 @@ export function createApp({
         return;
       }
 
+      if (request.method === "GET" && pathname === "/api/v1/workspace-tools") {
+        sendJson(response, 200, { tools: workspaceToolDefinitions }, origin);
+        return;
+      }
+
       if (request.method === "GET" && pathname === "/api/v1/campaigns") {
         sendJson(response, 200, { campaigns: await store.list(auth) }, origin);
         return;
@@ -211,6 +217,19 @@ export function createApp({
         };
         const createdCampaign = await store.create(campaign, auth);
         sendJson(response, 201, { campaign: createdCampaign }, origin);
+        return;
+      }
+
+      const toolCampaignId = routeCampaignId(pathname, "tools/execute");
+      if (request.method === "POST" && toolCampaignId) {
+        const input = validateWorkspaceToolRequest(await readJson(request));
+        const execution = await store.executeWorkspaceTool(
+          toolCampaignId,
+          input.tool,
+          input.arguments,
+          auth,
+        );
+        sendJson(response, 200, { execution }, origin);
         return;
       }
 
