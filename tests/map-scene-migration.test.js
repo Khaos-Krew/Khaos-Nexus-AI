@@ -3,15 +3,17 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 const migrationUrls = [
-  new URL("../supabase/migrations/20260803170000_dnd_ai_phase7_map_scene_schema.sql", import.meta.url),
-  new URL("../supabase/migrations/20260803170010_dnd_ai_phase7_map_scene_rpcs.sql", import.meta.url),
-];
+  "20260803170000_dnd_ai_phase7_map_scene_schema.sql",
+  "20260803170010_dnd_ai_phase7_map_scene_rpcs.sql",
+  "20260803170020_dnd_ai_phase7_map_scene_creator_index.sql",
+  "20260803173000_dnd_ai_phase7_map_scene_explicit_rpc_only_policy.sql",
+].map((name) => new URL(`../supabase/migrations/${name}`, import.meta.url));
 
 async function sql() {
   return (await Promise.all(migrationUrls.map((url) => readFile(url, "utf8")))).join("\n");
 }
 
-test("Phase 7 creates revisioned map scene storage with RLS and indexes", async () => {
+test("Phase 7 creates revisioned map scene storage with explicit RPC-only RLS and indexes", async () => {
   const content = await sql();
   assert.match(content, /create table if not exists public\.dnd_map_scenes/i);
   assert.match(content, /campaign_id uuid not null references public\.dnd_campaigns\(id\) on delete cascade/i);
@@ -20,8 +22,11 @@ test("Phase 7 creates revisioned map scene storage with RLS and indexes", async 
   assert.match(content, /revision integer not null default 0/i);
   assert.match(content, /alter table public\.dnd_map_scenes enable row level security/i);
   assert.match(content, /revoke all on table public\.dnd_map_scenes from anon, authenticated/i);
+  assert.match(content, /create policy dnd_map_scenes_rpc_only/i);
+  assert.match(content, /for all\s+to authenticated\s+using \(false\)\s+with check \(false\)/i);
   assert.match(content, /dnd_map_scenes_campaign_updated_idx/i);
   assert.match(content, /dnd_map_scenes_approved_by_idx/i);
+  assert.match(content, /dnd_map_scenes_created_by_idx/i);
 });
 
 test("Phase 7 player projection helper rejects every secret-bearing collection", async () => {
