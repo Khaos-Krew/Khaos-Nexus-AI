@@ -15,6 +15,7 @@ const PROMPTS = {
   generateHomebrew: { feature: "homebrew.generate", promptId: "dnd-homebrew", promptVersion: "1", contract: "originality-balance-provenance-v1", categories: ["homebrew_balance", "copyright", "latency", "cost"] },
   generateMap: { feature: "map.generate", promptId: "dnd-map", promptVersion: "1", contract: "original-map-coordinates-v1", categories: ["copyright", "latency", "cost"] },
   generateSessionIntelligence: { feature: "session.intelligence", promptId: "dnd-session-intelligence", promptVersion: "1", contract: "gm-player-recap-canon-contradictions-v1", categories: ["secret_leakage", "lore_consistency", "copyright", "latency", "cost"] },
+  generateCoDmDraft: { feature: "co_dm.draft", promptId: "dnd-co-dm-draft", promptVersion: "1", contract: "stateless-explicit-user-no-tools-no-storage-v1", categories: ["player_agency", "secret_leakage", "lore_consistency", "copyright", "latency", "cost"] },
 };
 
 function hash(value) {
@@ -83,6 +84,19 @@ function buildEvaluationArtifact(method, args, output, latencyMs, costMicros) {
     };
   }
   if (method === "generateHomebrew") return { input: args[0], requestText: args[0]?.concept, output, homebrew: output, latencyMs, costMicros };
+  if (method === "generateCoDmDraft") {
+    const request = args[0] ?? {};
+    const secrets = String(request.context?.text ?? "").split(/\r?\n/).filter((line) => /^\s*secret:/i.test(line)).map((line) => line.replace(/^\s*secret:\s*/i, ""));
+    return {
+      input: request,
+      requestText: request.prompt,
+      output,
+      publicOutput: output?.content ?? "",
+      secrets,
+      latencyMs,
+      costMicros,
+    };
+  }
   if (method === "generateSessionIntelligence") {
     return {
       input: args[1],
@@ -105,7 +119,9 @@ function extractStructuredOutput(body) {
   for (const item of Array.isArray(body.output) ? body.output : []) {
     for (const content of Array.isArray(item?.content) ? item.content : []) {
       if (content?.type === "output_text" && typeof content.text === "string") parts.push(content.text);
-      if (content?.type === "refusal" && typeof content.refusal === "string") throw new Error(`OpenAI refused the request: ${content.refusal}`);
+      if (content?.type === "refusal" && typeof content.refusal === "string") {
+        throw new Error(`OpenAI refused the request: ${content.refusal}`);
+      }
     }
   }
   if (!parts.length) throw new Error("OpenAI response did not include output text");
@@ -204,7 +220,10 @@ export function withProductionControls(provider, store) {
           ((inputTokens * (reservation.policy?.inputCostMicrosPerMillion ?? 0))
             + (outputTokens * (reservation.policy?.outputCostMicrosPerMillion ?? 0))) / 1_000_000,
         );
-        const report = runEvaluationSuite(buildEvaluationArtifact(method, args, output, latencyMs, costMicros), prompt.categories);
+        const report = runEvaluationSuite(
+          buildEvaluationArtifact(method, args, output, latencyMs, costMicros),
+          prompt.categories,
+        );
         const outputHash = hash(output);
         await store.finalizeGeneration({
           requestId: context.requestId,
