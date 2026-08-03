@@ -139,7 +139,12 @@ export function attachCoDmRoutes(server, {
       const input = validateCoDmDraftRequest(await readJson(request));
       responseId = input.requestId;
       const headerId = request.headers["x-khaos-request-id"];
-      if (headerId !== undefined && headerId !== input.requestId) {
+      if (typeof headerId !== "string" || !UUID_PATTERN.test(headerId)) {
+        const error = new Error("X-Khaos-Request-Id is required and must be a UUID");
+        error.status = 400;
+        throw error;
+      }
+      if (headerId !== input.requestId) {
         const error = new Error("X-Khaos-Request-Id must match requestId");
         error.status = 400;
         throw error;
