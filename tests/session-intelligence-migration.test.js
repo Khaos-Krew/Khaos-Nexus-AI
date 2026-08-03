@@ -15,13 +15,17 @@ const migrationUrls = [
     "../supabase/migrations/20260803155700_dnd_ai_phase5_private_function_grants.sql",
     import.meta.url,
   ),
+  new URL(
+    "../supabase/migrations/20260803155800_dnd_ai_phase5_intelligence_approver_index.sql",
+    import.meta.url,
+  ),
 ];
 
 async function sql() {
   return (await Promise.all(migrationUrls.map((url) => readFile(url, "utf8")))).join("\n");
 }
 
-test("Phase 5 migration adds revisioned intelligence fields", async () => {
+test("Phase 5 migration adds revisioned intelligence fields and approval indexes", async () => {
   const content = await sql();
   for (const column of [
     "intelligence_draft",
@@ -33,19 +37,25 @@ test("Phase 5 migration adds revisioned intelligence fields", async () => {
     assert.match(content, new RegExp(`add column if not exists ${column}`, "i"));
   }
   assert.match(content, /check \(intelligence_revision >= 0\)/i);
+  assert.match(content, /dnd_sessions_intelligence_approved_by_idx/i);
 });
 
 test("Phase 5 rebuilds a minimal player projection from safe JSON types", async () => {
   const content = await sql();
-  assert.match(content, /dnd_ai_public_session_intelligence/i);
-  assert.match(content, /item\.value -> 'public' = 'true'::jsonb/i);
-  assert.match(content, /jsonb_typeof\(p_draft -> 'canonFacts'\) = 'array'/i);
-  assert.match(content, /jsonb_typeof\(p_draft -> 'unresolvedThreads'\) = 'array'/i);
-  assert.match(content, /jsonb_build_object\(\s*'statement'/i);
-  assert.match(content, /jsonb_build_object\(\s*'thread'/i);
-  const hardenedPublicFunction = content.split(
+  const marker = "create or replace function private.dnd_ai_public_session_intelligence";
+  const start = content.lastIndexOf(marker);
+  const end = content.indexOf(
     "create or replace function private.dnd_ai_save_session_intelligence",
-  )[0].split("create or replace function private.dnd_ai_public_session_intelligence").at(-1);
+    start,
+  );
+  assert.ok(start >= 0 && end > start, "hardened public projection must be present");
+  const hardenedPublicFunction = content.slice(start, end);
+
+  assert.match(hardenedPublicFunction, /item\.value -> 'public' = 'true'::jsonb/i);
+  assert.match(hardenedPublicFunction, /jsonb_typeof\(p_draft -> 'canonFacts'\) = 'array'/i);
+  assert.match(hardenedPublicFunction, /jsonb_typeof\(p_draft -> 'unresolvedThreads'\) = 'array'/i);
+  assert.match(hardenedPublicFunction, /jsonb_build_object\(\s*'statement'/i);
+  assert.match(hardenedPublicFunction, /jsonb_build_object\(\s*'thread'/i);
   assert.doesNotMatch(hardenedPublicFunction, /gmRecap/);
   assert.doesNotMatch(hardenedPublicFunction, /evidence/);
   assert.doesNotMatch(hardenedPublicFunction, /notes/);
