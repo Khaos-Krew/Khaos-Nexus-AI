@@ -70,17 +70,30 @@ function compactLines(value) {
 }
 
 function publicLine(line) {
-  return !/^secret\s*:/i.test(line) && !/^gm\s*:/i.test(line);
+  return !/^(?:secret(?:\s+fact)?|gm(?:\s+note)?)\s*:/i.test(line);
 }
 
 function afterMarker(line) {
   return line.replace(/^[a-z _-]+:\s*/i, "").trim();
 }
 
+function openAiSessionSchema() {
+  const schema = structuredClone(sessionIntelligenceResultJsonSchema);
+  schema.properties.entityChanges.items.properties.arguments = {
+    type: "object",
+    additionalProperties: false,
+    properties: {},
+  };
+  return schema;
+}
+
 export function generateMockSessionIntelligence(context, request) {
   const lines = compactLines(request.sourceNotes);
   const transcriptLines = request.transcript.map((entry) => `${entry.speaker}: ${entry.text}`);
-  const summaryLines = [...lines.filter(publicLine), ...transcriptLines].slice(0, 8);
+  const publicTranscriptLines = request.transcript
+    .filter((entry) => entry.public)
+    .map((entry) => `${entry.speaker}: ${entry.text}`);
+  const summaryLines = [...lines.filter(publicLine), ...publicTranscriptLines].slice(0, 8);
   const gmLines = [...lines, ...transcriptLines].slice(0, 16);
   const sessionTitle = context.session?.title || `Session intelligence for ${context.campaign.name}`;
 
@@ -168,7 +181,7 @@ export function generateMockSessionIntelligence(context, request) {
             : `Open by reconnecting the party to ${context.campaign.currentScene || "the current situation"}.`,
           likelyNpcs: (context.workspace?.npcs ?? []).slice(0, 5).map((npc) => npc.name),
           encounterIdeas: ["Use one unresolved thread as a choice-driven complication rather than a forced outcome."],
-          clues: canonFacts.slice(0, 5).map((fact) => fact.statement),
+          clues: canonFacts.filter((fact) => fact.public).slice(0, 5).map((fact) => fact.statement),
           risks: contradictions.length ? ["Resolve detected continuity conflicts before revealing new canon."] : [],
           questions: ["Which proposed canon facts should become authoritative?", "Which unresolved thread should receive focus next?"],
         }
@@ -194,7 +207,7 @@ export function withSessionIntelligence(provider) {
         input: providerInput(context, request),
         name: "dnd_session_intelligence",
         description: "Manager-reviewed D&D session recap, canon proposals, continuity checks, and next-session preparation.",
-        schema: sessionIntelligenceResultJsonSchema,
+        schema: openAiSessionSchema(),
       });
       return validateSessionIntelligenceResult(output);
     };
