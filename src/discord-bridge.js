@@ -2,6 +2,7 @@ import { validateDiceRequest } from "./domain.js";
 import { validateEncounterToolRequest } from "./encounter-tools.js";
 import { validateHomebrewRequest } from "./homebrew.js";
 import { validateMapRequest } from "./maps.js";
+import { validateRetrievalSearchRequest } from "./retrieval.js";
 import {
   validateSessionIntelligenceApprovalRequest,
   validateSessionIntelligenceRequest,
@@ -122,6 +123,7 @@ export const discordCommandDefinitions = Object.freeze([
   { name: "session_intelligence", description: "Show role-filtered approved recap or manager intelligence." },
   { name: "generate_session_intelligence", description: "Generate and optionally save a manager-reviewed session draft." },
   { name: "approve_session_intelligence", description: "Approve a specific session intelligence revision." },
+  { name: "search_knowledge", description: "Search campaign-authorized sources with stable citations." },
 ]);
 
 export function validateDiscordCommandRequest(value) {
@@ -199,6 +201,8 @@ export function validateDiscordCommandRequest(value) {
           }),
         },
       };
+    case "search_knowledge":
+      return { ...base, options: validateRetrievalSearchRequest(options) };
     default:
       fail(`Unsupported Discord command: ${base.command}`, "command");
   }
