@@ -4,6 +4,8 @@ import { LocalDiscordBridge, SupabaseDiscordBridge } from "./discord-adapters.js
 import { attachDiscordRoutes } from "./discord-http.js";
 import { attachDiscordSecurity } from "./discord-security.js";
 import { LocalEncounterEngine } from "./encounter-engine.js";
+import { attachRetrievalRoutes } from "./retrieval-http.js";
+import { withRetrievalStore } from "./retrieval-store.js";
 import { withSessionIntelligence } from "./session-intelligence-provider.js";
 import { attachSessionIntelligenceRoutes } from "./session-intelligence-http.js";
 import { withSessionIntelligenceStore } from "./session-intelligence-store.js";
@@ -38,12 +40,14 @@ function createProvider() {
   throw new Error(`Unsupported AI_PROVIDER: ${providerName}`);
 }
 
+function decorateStore(store) {
+  return withRetrievalStore(withSessionIntelligenceStore(store));
+}
+
 function createPersistence() {
   const storeName = (process.env.CAMPAIGN_STORE ?? "json").toLowerCase();
   if (storeName === "json") {
-    const store = withSessionIntelligenceStore(
-      new JsonCampaignStore(process.env.DATA_DIR ?? "./data"),
-    );
+    const store = decorateStore(new JsonCampaignStore(process.env.DATA_DIR ?? "./data"));
     const authRequired = booleanEnv("AUTH_REQUIRED", false);
     const discordBridge = new LocalDiscordBridge();
     if (!authRequired) {
@@ -64,7 +68,7 @@ function createPersistence() {
     };
     const client = new SupabaseRestClient(config);
     return {
-      store: withSessionIntelligenceStore(new SupabaseCampaignStore(client)),
+      store: decorateStore(new SupabaseCampaignStore(client)),
       discordBridge: new SupabaseDiscordBridge(client),
       authVerifier: new SupabaseAuthVerifier(config),
       authRequired: true,
@@ -93,6 +97,11 @@ const server = createApp({
 attachSessionIntelligenceRoutes(server, {
   ...persistence,
   provider,
+  corsOrigin,
+});
+
+attachRetrievalRoutes(server, {
+  ...persistence,
   corsOrigin,
 });
 

@@ -18,14 +18,30 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
-      - name: Validate Discord contracts
-        run: node --test tests/discord-bridge.test.js
+      - name: Validate Discord command discovery
+        run: node --test --test-name-pattern="command discovery" tests/discord-bridge.test.js
+      - name: Validate Discord binding contracts
+        run: node --test --test-name-pattern="bindings accept" tests/discord-bridge.test.js
+      - name: Validate Discord base command contracts
+        run: node --test --test-name-pattern="valid snowflakes" tests/discord-bridge.test.js
+      - name: Validate Discord retrieval command contract
+        run: node --test --test-name-pattern="retrieval queries" tests/discord-bridge.test.js
       - name: Validate Discord adapters
         run: node --test tests/discord-adapters.test.js
       - name: Validate Discord HTTP bridge
         run: node --test tests/discord-api.test.js
       - name: Validate Discord migrations
         run: node --test tests/discord-migration.test.js
+      - name: Validate retrieval contracts
+        run: node --test tests/retrieval.test.js
+      - name: Validate retrieval adapters
+        run: node --test tests/retrieval-store.test.js
+      - name: Validate retrieval HTTP API
+        run: node --test tests/retrieval-api.test.js
+      - name: Validate retrieval Discord flow
+        run: node --test tests/retrieval-discord.test.js
+      - name: Validate retrieval migrations
+        run: node --test tests/retrieval-migration.test.js
       - name: Run full test suite
         run: npm test
       - run: npm run build

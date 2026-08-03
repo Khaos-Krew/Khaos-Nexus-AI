@@ -36,6 +36,7 @@ test("Discord command discovery exposes only the supported bridge commands", () 
       "session_intelligence",
       "generate_session_intelligence",
       "approve_session_intelligence",
+      "search_knowledge",
     ],
   );
 });
@@ -76,7 +77,7 @@ test("Discord commands require valid snowflakes and strict command payloads", ()
   );
 });
 
-test("Discord manager actions validate their identifiers and revisions", () => {
+test("Discord manager actions validate identifiers, revisions, and retrieval queries", () => {
   const homebrew = validateDiscordCommandRequest(commandBase(
     "approve_homebrew",
     { homebrewId: HOME_ID },
@@ -105,4 +106,17 @@ test("Discord manager actions validate their identifiers and revisions", () => {
     { sessionId: SESSION_ID, expectedRevision: 1 },
   ));
   assert.equal(approved.options.expectedRevision, 1);
+
+  const search = validateDiscordCommandRequest(commandBase(
+    "search_knowledge",
+    { query: "ember crucible", limit: 5 },
+  ));
+  assert.equal(search.options.limit, 5);
+  assert.throws(
+    () => validateDiscordCommandRequest(commandBase(
+      "search_knowledge",
+      { query: "reconstruct the entire chapter" },
+    )),
+    /cannot reconstruct or export/i,
+  );
 });
