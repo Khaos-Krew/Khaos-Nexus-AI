@@ -1,4 +1,5 @@
 import { turnResultJsonSchema, validateTurnResult } from "./domain.js";
+import { generateProceduralMap, mapResultJsonSchema, validateMapResult } from "./maps.js";
 
 function buildInstructions(campaign) {
   return [
@@ -42,6 +43,20 @@ function buildInput(campaign, request) {
   };
 }
 
+function buildMapInstructions(request) {
+  return [
+    "You are Khaos Nexus AI's original tabletop map planner.",
+    `Create a new ${request.mapType} layout using seed ${request.seed}.`,
+    `The grid must be exactly ${request.width} by ${request.height}, use ${request.gridType} cells, and use the scale '${request.scale}'.`,
+    "Every zone and point coordinate must be an integer inside the grid. Every zone rectangle must fit fully inside the grid.",
+    "Every connection, encounter, and hazard must reference a zone id that exists in the zones array.",
+    "Create useful tactical choices, alternate routes, readable landmarks, and GM-facing secrets without deciding player actions.",
+    "Do not copy, trace, or reconstruct a published map, adventure layout, distinctive location arrangement, or commercial cartography style.",
+    "If the request still appears unusually close to a named published map, make a generic original alternative and set originality.status to needs-review.",
+    "Return structured map data only. An SVG preview is rendered locally after validation.",
+  ].join("\n");
+}
+
 function extractOutputText(body) {
   if (!body || typeof body !== "object") throw new Error("OpenAI returned an invalid response");
   if (typeof body.output_text === "string") return body.output_text;
@@ -50,6 +65,9 @@ function extractOutputText(body) {
     for (const content of Array.isArray(item?.content) ? item.content : []) {
       if (content?.type === "output_text" && typeof content.text === "string") {
         parts.push(content.text);
+      }
+      if (content?.type === "refusal" && typeof content.refusal === "string") {
+        throw new Error(`OpenAI refused the request: ${content.refusal}`);
       }
     }
   }
@@ -65,7 +83,7 @@ export class OpenAiProvider {
     this.name = "openai";
   }
 
-  async generateTurn(campaign, request) {
+  async requestStructured({ instructions, input, name, description, schema }) {
     const response = await fetch(`${this.baseUrl.replace(/\/$/, "")}/responses`, {
       method: "POST",
       headers: {
@@ -75,15 +93,15 @@ export class OpenAiProvider {
       body: JSON.stringify({
         model: this.model,
         store: false,
-        instructions: buildInstructions(campaign),
-        input: JSON.stringify(buildInput(campaign, request)),
+        instructions,
+        input: JSON.stringify(input),
         text: {
           format: {
             type: "json_schema",
-            name: "dnd_turn",
-            description: "A structured D&D Game Master or Co-DM turn.",
+            name,
+            description,
             strict: true,
-            schema: turnResultJsonSchema,
+            schema,
           },
         },
       }),
@@ -94,7 +112,43 @@ export class OpenAiProvider {
       const detail = (await response.text()).slice(0, 1000);
       throw new Error(`OpenAI request failed (${response.status}): ${detail}`);
     }
-    return validateTurnResult(JSON.parse(extractOutputText(await response.json())));
+    return JSON.parse(extractOutputText(await response.json()));
+  }
+
+  async generateTurn(campaign, request) {
+    const output = await this.requestStructured({
+      instructions: buildInstructions(campaign),
+      input: buildInput(campaign, request),
+      name: "dnd_turn",
+      description: "A structured D&D Game Master or Co-DM turn.",
+      schema: turnResultJsonSchema,
+    });
+    return validateTurnResult(output);
+  }
+
+  async generateMap(request) {
+    const output = await this.requestStructured({
+      instructions: buildMapInstructions(request),
+      input: {
+        request: {
+          mapType: request.mapType,
+          prompt: request.prompt,
+          seed: request.seed,
+          width: request.width,
+          height: request.height,
+          gridType: request.gridType,
+          scale: request.scale,
+          density: request.density,
+          biomes: request.biomes,
+          features: request.features,
+          constraints: request.constraints,
+        },
+      },
+      name: "dnd_map",
+      description: "An original tabletop map layout with validated coordinates and GM content.",
+      schema: mapResultJsonSchema,
+    });
+    return validateMapResult(output);
   }
 }
 
@@ -161,5 +215,9 @@ export class MockAiProvider {
       },
       safety: { status: "ok", reason: "" },
     };
+  }
+
+  async generateMap(request) {
+    return generateProceduralMap(request);
   }
 }
