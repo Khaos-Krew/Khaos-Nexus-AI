@@ -2,13 +2,19 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-const migrationUrl = new URL(
-  "../supabase/migrations/20260803155500_dnd_ai_phase5_session_intelligence.sql",
-  import.meta.url,
-);
+const migrationUrls = [
+  new URL(
+    "../supabase/migrations/20260803155500_dnd_ai_phase5_session_intelligence.sql",
+    import.meta.url,
+  ),
+  new URL(
+    "../supabase/migrations/20260803155600_dnd_ai_phase5_session_intelligence_hardening.sql",
+    import.meta.url,
+  ),
+];
 
 async function sql() {
-  return readFile(migrationUrl, "utf8");
+  return (await Promise.all(migrationUrls.map((url) => readFile(url, "utf8")))).join("\n");
 }
 
 test("Phase 5 migration adds revisioned intelligence fields", async () => {
@@ -25,14 +31,30 @@ test("Phase 5 migration adds revisioned intelligence fields", async () => {
   assert.match(content, /check \(intelligence_revision >= 0\)/i);
 });
 
-test("Phase 5 migration filters player output and never exposes GM recap", async () => {
+test("Phase 5 rebuilds a minimal player projection from safe JSON types", async () => {
   const content = await sql();
   assert.match(content, /dnd_ai_public_session_intelligence/i);
-  assert.match(content, /where coalesce\(\(item\.value ->> 'public'\)::boolean, false\)/i);
-  const publicFunction = content.split("create or replace function private.dnd_ai_session_intelligence")[0];
-  assert.doesNotMatch(publicFunction, /gmRecap/);
-  assert.doesNotMatch(publicFunction, /contradictions/);
-  assert.doesNotMatch(publicFunction, /nextSessionPrep/);
+  assert.match(content, /item\.value -> 'public' = 'true'::jsonb/i);
+  assert.match(content, /jsonb_typeof\(p_draft -> 'canonFacts'\) = 'array'/i);
+  assert.match(content, /jsonb_typeof\(p_draft -> 'unresolvedThreads'\) = 'array'/i);
+  assert.match(content, /jsonb_build_object\(\s*'statement'/i);
+  assert.match(content, /jsonb_build_object\(\s*'thread'/i);
+  const hardenedPublicFunction = content.split(
+    "create or replace function private.dnd_ai_save_session_intelligence",
+  )[0].split("create or replace function private.dnd_ai_public_session_intelligence").at(-1);
+  assert.doesNotMatch(hardenedPublicFunction, /gmRecap/);
+  assert.doesNotMatch(hardenedPublicFunction, /evidence/);
+  assert.doesNotMatch(hardenedPublicFunction, /notes/);
+  assert.doesNotMatch(hardenedPublicFunction, /nextSessionPrep/);
+});
+
+test("Phase 5 validates field types and size limits inside PostgreSQL", async () => {
+  const content = await sql();
+  assert.match(content, /p_intelligence ->> 'version' <> '1'/i);
+  assert.match(content, /jsonb_typeof\(p_intelligence -> 'gmRecap'\) <> 'string'/i);
+  assert.match(content, /jsonb_typeof\(p_intelligence -> 'canonFacts'\) <> 'array'/i);
+  assert.match(content, /jsonb_typeof\(p_intelligence -> 'nextSessionPrep'\) <> 'object'/i);
+  assert.match(content, /octet_length\(p_intelligence::text\) > 160000/i);
 });
 
 test("Phase 5 saves and approvals are manager-only, revision-locked, and audited", async () => {
