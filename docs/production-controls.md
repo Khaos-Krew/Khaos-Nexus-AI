@@ -1,25 +1,25 @@
 # Production controls, evaluations, and monitoring
 
-Phase 8 adds one production-control boundary around every AI provider call. Campaign turns, homebrew, maps, session intelligence, HTTP clients, and Discord commands use the same policy, budget, usage, and evaluation path.
+One production-control boundary wraps every AI provider call. Campaign turns, homebrew, maps, session intelligence, desktop Co-DM, HTTP, and Discord generation use the same policy, budget, usage, and evaluation path.
 
-Voice Co-DM remains excluded. This layer can support a future premium entitlement decision, but no voice provider, entitlement, billing, or payment logic is included.
+Voice Co-DM remains excluded. No voice provider, entitlement, billing, or payment logic is included.
 
 ## Request lifecycle
 
-1. The outer HTTP wrapper assigns or validates `X-Khaos-Request-Id`.
+1. The HTTP boundary assigns/validates `X-Khaos-Request-Id` and authorized tenant/campaign scope.
 2. The provider boundary resolves the feature's versioned prompt descriptor.
-3. The store atomically reserves estimated input tokens, maximum output tokens, and configured cost.
-4. Model policy and all matching tenant, campaign, user, and feature budgets are evaluated before provider execution.
+3. The store atomically reserves estimated input, maximum output, and configured cost.
+4. Exact model policy and all matching tenant/campaign/user/feature budgets are evaluated before provider execution.
 5. A denied request is recorded as `blocked`; the provider is not invoked.
-6. A permitted request executes with the approved maximum output-token limit.
-7. Usage, latency, hashes, errors, and a content-free evaluation summary are finalized idempotently.
-8. The full deterministic evaluation report may be stored separately for authorized campaign or tenant review.
+6. A permitted request executes with the approved output-token limit.
+7. Usage, latency, hashes, safe errors, and content-free evaluation summary are finalized idempotently.
+8. Authorized managers may inspect stored evaluation reports.
 
-The usage ledger stores no raw prompt or generated-output text. It stores SHA-256 input/output identities, bounded provider identifiers, usage metrics, latency, configured cost, and category outcomes.
+The usage ledger stores no raw prompt/generated-output text. It stores SHA-256 identities, bounded provider identifiers, usage metrics, latency, configured cost, and category outcomes.
 
 ## Evaluation suite
 
-Baseline suite version: `baseline-1`.
+Suite version: `baseline-1`.
 
 Categories:
 
@@ -33,47 +33,49 @@ Categories:
 - `latency`
 - `cost`
 
-Each category returns `pass`, `warn`, or `fail`. Evidence is represented by SHA-256 and length, not raw campaign or generation text. The baseline suite is deterministic and does not depend on a model-as-judge request.
+Each returns `pass`, `warn`, or `fail`. Evidence is represented by hashes and lengths rather than raw campaign/generation text. The baseline suite is deterministic and does not make a model-as-judge request.
 
 ## Budgets
 
-Budgets can apply to:
+Budgets can apply to tenant, campaign, user, feature, and daily/monthly periods. Limits cover request count, input tokens, output tokens, and configured micro-cost units. All matching active budgets apply. Matching rows are locked and outstanding reservations count toward limits so concurrent requests cannot overrun them.
 
-- tenant
-- campaign
-- user
-- feature
-
-Periods are daily or monthly. Limits may cover requests, input tokens, output tokens, or configured micro-cost units. All matching active budgets apply. Reservations lock matching budget rows and count outstanding reservations so concurrent requests cannot overrun limits.
-
-Provider prices are not hard-coded. Administrators explicitly configure input/output micro-cost rates on versioned model policies.
+OpenAI generation fails closed when no matching active budget exists.
 
 ## Model and prompt policies
 
-Every provider call must match an active policy for:
+Every call must match an active policy for:
 
 - feature
 - provider
-- model pattern
-- prompt ID
-- prompt version
-- prompt SHA-256
+- exact model/model pattern
+- prompt ID/version/SHA-256
 - policy version
+- maximum input/output tokens
+- configured input/output rates
 
-Policies also set maximum input/output tokens and optional cost rates. Missing or disabled policies fail closed.
+Missing or disabled policies fail closed.
 
-The seeded baseline permits deterministic mock mode and OpenAI model wildcards for the four existing AI features. OpenAI prices remain zero until an administrator records approved current rates.
+Production global OpenAI policies use:
+
+- model: `gpt-5-mini-2025-08-07`
+- policy version: `launch-2`
+- input: `250000` micro-cost units per million tokens
+- output: `2000000` micro-cost units per million tokens
+
+The moving `gpt-5-mini` alias and zero-priced wildcard policies are inactive. Changing snapshot, model family, prompts, or rates requires a new reviewed policy migration and evaluations.
+
+Mock development policies remain zero-cost and deterministic.
 
 ## HTTP endpoints
 
-- `GET /health` — API version, package version, capabilities, and control versions
+- `GET /health`
 - `GET /api/v1/production/prompts`
 - `GET|POST /api/v1/production/budgets`
 - `GET|POST /api/v1/production/model-policies`
 - `GET /api/v1/production/usage`
 - `GET|POST /api/v1/production/evaluations`
 
-`campaignId` and `limit` are query parameters for read endpoints. Protected Supabase mode uses the caller's access token and existing tenant/campaign roles.
+Protected Supabase mode uses the caller's access token and existing tenant/campaign roles.
 
 ## Database boundary
 
@@ -84,19 +86,28 @@ Tables:
 - `dnd_ai_usage_events`
 - `dnd_ai_evaluation_runs`
 
-All tables have RLS enabled, an explicit RPC-only deny policy, and no direct `anon` or `authenticated` table privileges. Public RPC wrappers are invoker-rights; private implementations are security-definer functions with fixed search paths. Anonymous execution is revoked.
+All have RLS, RPC-only deny policies, and no direct `anon`/`authenticated` table privileges. Public wrappers use invoker rights; private implementations use security definer with fixed search paths. Anonymous execution is revoked. Budget/model-policy writes are audited.
 
-Budget and model-policy writes are audited through `dnd_audit_log`.
+## OpenAI request and retention boundary
 
-## OpenAI usage
+Responses requests:
 
-OpenAI Responses requests continue to use `store: false`. When the provider returns usage, Khaos Nexus records input, output, cached-input, total, and reasoning-token metrics. Provider credentials remain server-side and are never returned through health, usage, errors, or monitoring APIs.
+- use the pinned snapshot
+- set `store: false`
+- use strict JSON Schema
+- set bounded `max_output_tokens`
+- do not use conversations, files, background mode, or provider tools
+- record returned input/output/cached/reasoning token metrics
+
+`store: false` prevents the service from requesting persisted response objects. It is not a Zero Data Retention guarantee. OpenAI project data controls govern abuse-monitoring retention. Operators must separately review/configure Modified Abuse Monitoring or Zero Data Retention when eligible and must not claim ZDR unless enabled for the deployed API project.
+
+Provider credentials remain server-side and never appear in health, usage, errors, monitoring APIs, desktop renderer state, or Discord payloads.
 
 ## Non-goals
 
-- no billing or payment provider
-- no automatic upgrades
-- no hard-coded retail pricing
-- no raw prompt/output analytics
-- no autonomous rollback
-- no Voice Co-DM
+- billing/payment collection
+- automatic plan upgrades
+- raw prompt/output analytics
+- autonomous rollback/actions
+- arbitrary provider/model selection
+- Voice Co-DM
