@@ -1,11 +1,12 @@
 import { MockAiProvider, OpenAiProvider } from "./ai.js";
-import { withCoDmDraft } from "./co-dm.js";
-import { attachCoDmRoutes } from "./co-dm-http.js";
 import { createApp } from "./app.js";
+import { attachCoDmRoutes } from "./co-dm-http.js";
+import { withCoDmDraft } from "./co-dm.js";
 import { LocalDiscordBridge, SupabaseDiscordBridge } from "./discord-adapters.js";
 import { attachDiscordRoutes } from "./discord-http.js";
 import { attachDiscordSecurity } from "./discord-security.js";
 import { LocalEncounterEngine } from "./encounter-engine.js";
+import { configureHttpServer, logInternalError } from "./http-security.js";
 import { attachMapSceneDiscordRoutes } from "./map-scene-discord.js";
 import { attachMapSceneRoutes } from "./map-scene-http.js";
 import { withMapSceneStore } from "./map-scene-store.js";
@@ -14,8 +15,9 @@ import { withProductionControlStore } from "./production-control-store.js";
 import { defaultGenerationPolicies, withProductionControls } from "./production-controls.js";
 import { attachRetrievalRoutes } from "./retrieval-http.js";
 import { withRetrievalStore } from "./retrieval-store.js";
-import { withSessionIntelligence } from "./session-intelligence-provider.js";
+import { loadRuntimeConfig } from "./runtime-config.js";
 import { attachSessionIntelligenceRoutes } from "./session-intelligence-http.js";
+import { withSessionIntelligence } from "./session-intelligence-provider.js";
 import { withSessionIntelligenceStore } from "./session-intelligence-store.js";
 import { JsonCampaignStore } from "./store.js";
 import {
@@ -24,30 +26,18 @@ import {
   SupabaseRestClient,
 } from "./supabase.js";
 
-const SERVICE_VERSION = "0.11.0";
-
-function booleanEnv(name, defaultValue = false) {
-  const value = process.env[name];
-  if (value === undefined) return defaultValue;
-  if (/^(1|true|yes|on)$/i.test(value)) return true;
-  if (/^(0|false|no|off)$/i.test(value)) return false;
-  throw new Error(`${name} must be true or false`);
-}
+const SERVICE_VERSION = "0.12.0";
+const config = loadRuntimeConfig(process.env);
 
 function createBaseProvider() {
-  const providerName = (process.env.AI_PROVIDER ?? "mock").toLowerCase();
-  if (providerName === "mock") return withCoDmDraft(withSessionIntelligence(new MockAiProvider()));
-  if (providerName === "openai") {
-    if (!process.env.OPENAI_API_KEY) {
-      throw new Error("OPENAI_API_KEY is required when AI_PROVIDER=openai");
-    }
-    return withCoDmDraft(withSessionIntelligence(new OpenAiProvider(
-      process.env.OPENAI_API_KEY,
-      process.env.OPENAI_MODEL ?? "gpt-5-mini",
-      process.env.OPENAI_BASE_URL ?? "https://api.openai.com/v1",
-    )));
+  if (config.provider === "mock") {
+    return withCoDmDraft(withSessionIntelligence(new MockAiProvider()));
   }
-  throw new Error(`Unsupported AI_PROVIDER: ${providerName}`);
+  return withCoDmDraft(withSessionIntelligence(new OpenAiProvider(
+    config.openAiApiKey,
+    config.openAiModel,
+    config.openAiBaseUrl,
+  )));
 }
 
 function decorateCampaignStore(store) {
@@ -55,42 +45,30 @@ function decorateCampaignStore(store) {
 }
 
 function createPersistence() {
-  const storeName = (process.env.CAMPAIGN_STORE ?? "json").toLowerCase();
-  if (storeName === "json") {
-    const store = decorateCampaignStore(new JsonCampaignStore(process.env.DATA_DIR ?? "./data"));
-    const authRequired = booleanEnv("AUTH_REQUIRED", false);
+  if (config.store === "json") {
+    const store = decorateCampaignStore(new JsonCampaignStore(config.dataDir));
     const discordBridge = new LocalDiscordBridge();
-    if (!authRequired) {
-      return { store, discordBridge, authVerifier: null, authRequired };
+    if (!config.authRequired) {
+      return { store, discordBridge, authVerifier: null, authRequired: false };
     }
-
     const authVerifier = new SupabaseAuthVerifier({
-      url: process.env.SUPABASE_URL,
-      publishableKey: process.env.SUPABASE_PUBLISHABLE_KEY,
+      url: config.supabaseUrl,
+      publishableKey: config.supabasePublishableKey,
     });
-    return { store, discordBridge, authVerifier, authRequired };
+    return { store, discordBridge, authVerifier, authRequired: true };
   }
 
-  if (storeName === "supabase") {
-    const config = {
-      url: process.env.SUPABASE_URL,
-      publishableKey: process.env.SUPABASE_PUBLISHABLE_KEY,
-    };
-    const client = new SupabaseRestClient(config);
-    return {
-      store: decorateCampaignStore(new SupabaseCampaignStore(client)),
-      discordBridge: new SupabaseDiscordBridge(client),
-      authVerifier: new SupabaseAuthVerifier(config),
-      authRequired: true,
-    };
-  }
-
-  throw new Error(`Unsupported CAMPAIGN_STORE: ${storeName}`);
-}
-
-const port = Number(process.env.PORT ?? 8787);
-if (!Number.isInteger(port) || port < 1 || port > 65535) {
-  throw new Error("PORT must be an integer between 1 and 65535");
+  const supabaseConfig = {
+    url: config.supabaseUrl,
+    publishableKey: config.supabasePublishableKey,
+  };
+  const client = new SupabaseRestClient(supabaseConfig);
+  return {
+    store: decorateCampaignStore(new SupabaseCampaignStore(client)),
+    discordBridge: new SupabaseDiscordBridge(client),
+    authVerifier: new SupabaseAuthVerifier(supabaseConfig),
+    authRequired: true,
+  };
 }
 
 const baseProvider = createBaseProvider();
@@ -99,64 +77,97 @@ persistence.store = withProductionControlStore(persistence.store, {
   defaultPolicies: defaultGenerationPolicies(baseProvider.name, baseProvider.model),
 });
 const provider = withProductionControls(baseProvider, persistence.store);
-const corsOrigin = process.env.CORS_ORIGIN ?? "http://localhost:3000";
 const encounterEngine = persistence.store.requiresAuth ? null : new LocalEncounterEngine();
+const sharedHttpOptions = {
+  corsOrigin: config.corsOrigin,
+  trustProxy: config.trustProxy,
+  rateLimitMaxEntries: config.rateLimitMaxEntries,
+};
+
 const server = createApp({
   ...persistence,
   provider,
   encounterEngine,
-  corsOrigin,
+  ...sharedHttpOptions,
 });
 
 attachCoDmRoutes(server, {
   ...persistence,
   provider,
-  corsOrigin,
+  ...sharedHttpOptions,
 });
-
 attachSessionIntelligenceRoutes(server, {
   ...persistence,
   provider,
-  corsOrigin,
+  ...sharedHttpOptions,
 });
-
 attachRetrievalRoutes(server, {
   ...persistence,
-  corsOrigin,
+  ...sharedHttpOptions,
 });
-
 attachMapSceneRoutes(server, {
   ...persistence,
   provider,
-  corsOrigin,
+  ...sharedHttpOptions,
 });
-
 attachDiscordRoutes(server, {
   ...persistence,
   provider,
   encounterEngine,
-  corsOrigin,
+  ...sharedHttpOptions,
 });
-
 attachMapSceneDiscordRoutes(server, {
   ...persistence,
   provider,
-  corsOrigin,
+  ...sharedHttpOptions,
 });
-
-attachDiscordSecurity(server, { corsOrigin });
-
+attachDiscordSecurity(server, sharedHttpOptions);
 attachProductionControlRoutes(server, {
   ...persistence,
   provider,
-  corsOrigin,
+  ...sharedHttpOptions,
   serviceVersion: SERVICE_VERSION,
 });
+configureHttpServer(server, config);
 
-server.listen(port, () => {
-  console.log(
-    `Khaos Nexus AI listening on http://localhost:${port} ` +
-      `(${provider.name}/${provider.model}; store=${persistence.store.name}; ` +
-      `auth=${persistence.authRequired ? "required" : "optional"}; controls=enabled)`,
-  );
+let shuttingDown = false;
+function shutdown(signal) {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  console.log(JSON.stringify({ level: "info", event: "service.shutdown", signal }));
+  const forceTimer = setTimeout(() => {
+    logInternalError(new Error("Graceful shutdown timed out"), { event: "service.shutdown.timeout" });
+    process.exit(1);
+  }, config.shutdownGraceMs);
+  forceTimer.unref();
+  server.closeIdleConnections?.();
+  server.close((error) => {
+    clearTimeout(forceTimer);
+    if (error) {
+      logInternalError(error, { event: "service.shutdown.failed" });
+      process.exitCode = 1;
+    }
+  });
+}
+process.once("SIGTERM", () => shutdown("SIGTERM"));
+process.once("SIGINT", () => shutdown("SIGINT"));
+server.on("error", (error) => {
+  logInternalError(error, { event: "service.listen.failed" });
+  process.exitCode = 1;
+});
+
+server.listen(config.port, config.host, () => {
+  console.log(JSON.stringify({
+    level: "info",
+    event: "service.listening",
+    service: "khaos-nexus-ai",
+    version: SERVICE_VERSION,
+    host: config.host,
+    port: config.port,
+    provider: provider.name,
+    model: provider.model,
+    store: persistence.store.name,
+    authentication: persistence.authRequired ? "required" : "optional",
+    productionControls: true,
+  }));
 });
