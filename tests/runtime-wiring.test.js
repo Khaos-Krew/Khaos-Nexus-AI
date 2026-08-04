@@ -4,15 +4,21 @@ import test from "node:test";
 
 const indexUrl = new URL("../src/index.js", import.meta.url);
 const packageUrl = new URL("../package.json", import.meta.url);
+const manifestUrl = new URL("../integrations/khaos-nexus/integration-manifest.json", import.meta.url);
 
-test("runtime attaches the desktop Co-DM contract and shared production boundary", async () => {
+test("runtime attaches the desktop Co-DM contract and launch security boundary", async () => {
   const content = await readFile(indexUrl, "utf8");
+  assert.match(content, /loadRuntimeConfig\(process\.env\)/);
   assert.match(content, /withCoDmDraft\(withSessionIntelligence\(new MockAiProvider\(\)\)\)/);
   assert.match(content, /withSessionIntelligenceStore\(/);
   assert.match(content, /withRetrievalStore\(/);
   assert.match(content, /withMapSceneStore\(/);
   assert.match(content, /withProductionControlStore\(/);
+  assert.match(content, /withLaunchControlStore\(/);
   assert.match(content, /withProductionControls\(baseProvider, persistence\.store\)/);
+  assert.match(content, /withSafeProviderErrors\(/);
+  assert.match(content, /SafeSupabaseAuthVerifier/);
+  assert.match(content, /SafeSupabaseRestClient/);
   assert.match(content, /attachCoDmRoutes\(server/);
   assert.match(content, /attachSessionIntelligenceRoutes\(server/);
   assert.match(content, /attachRetrievalRoutes\(server/);
@@ -21,13 +27,24 @@ test("runtime attaches the desktop Co-DM contract and shared production boundary
   assert.match(content, /attachMapSceneDiscordRoutes\(server/);
   assert.match(content, /attachDiscordSecurity\(server/);
   assert.match(content, /attachProductionControlRoutes\(server/);
+  assert.match(content, /attachLaunchContext\(server/);
+  assert.match(content, /configureHttpServer\(server, config\)/);
+  assert.match(content, /server\.listen\(config\.port, config\.host/);
+  assert.match(content, /process\.once\("SIGTERM"/);
   assert.match(content, /encounterEngine/);
 });
 
-test("build validates every runtime wrapper introduced through Phase 8", async () => {
+test("build validates every production and app-integration runtime module", async () => {
   const packageJson = JSON.parse(await readFile(packageUrl, "utf8"));
-  assert.equal(packageJson.version, "0.11.0");
+  assert.equal(packageJson.version, "0.12.0");
   for (const modulePath of [
+    "integrations/khaos-nexus/ai-service-client.js",
+    "src/runtime-config.js",
+    "src/http-security.js",
+    "src/launch-context.js",
+    "src/launch-control-store.js",
+    "src/provider-safety.js",
+    "src/safe-supabase.js",
     "src/co-dm.js",
     "src/co-dm-http.js",
     "src/discord-http.js",
@@ -53,4 +70,19 @@ test("build validates every runtime wrapper introduced through Phase 8", async (
   ]) {
     assert.match(packageJson.scripts.build, new RegExp(modulePath.replaceAll(".", "\\.")));
   }
+  assert.equal(packageJson.scripts["test:launch"].includes("launch-hardening-migration.test.js"), true);
+  assert.equal(packageJson.scripts["test:integration"], "node --test tests/khaos-nexus-client.test.js");
+  assert.equal(packageJson.scripts["smoke:production"], "node scripts/production-smoke.js");
+});
+
+test("integration manifest pins the privileged desktop boundary", async () => {
+  const manifest = JSON.parse(await readFile(manifestUrl, "utf8"));
+  assert.equal(manifest.minimumServiceVersion, "0.12.0");
+  assert.equal(manifest.apiVersion, "1");
+  assert.equal(manifest.transport.mainProcessOnly, true);
+  assert.equal(manifest.transport.productionHttpsRequired, true);
+  assert.equal(manifest.transport.authentication, "supabase-bearer");
+  assert.ok(manifest.requiredCapabilities.includes("dnd.co-dm.draft"));
+  assert.ok(manifest.excludedCapabilities.includes("voice-co-dm"));
+  assert.ok(manifest.excludedCapabilities.includes("renderer-held-openai-key"));
 });
