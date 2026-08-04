@@ -15,18 +15,16 @@ import { withMapSceneStore } from "./map-scene-store.js";
 import { attachProductionControlRoutes } from "./production-control-http.js";
 import { withProductionControlStore } from "./production-control-store.js";
 import { defaultGenerationPolicies, withProductionControls } from "./production-controls.js";
+import { withSafeProviderErrors } from "./provider-safety.js";
 import { attachRetrievalRoutes } from "./retrieval-http.js";
 import { withRetrievalStore } from "./retrieval-store.js";
 import { loadRuntimeConfig } from "./runtime-config.js";
+import { SafeSupabaseAuthVerifier, SafeSupabaseRestClient } from "./safe-supabase.js";
 import { attachSessionIntelligenceRoutes } from "./session-intelligence-http.js";
 import { withSessionIntelligence } from "./session-intelligence-provider.js";
 import { withSessionIntelligenceStore } from "./session-intelligence-store.js";
 import { JsonCampaignStore } from "./store.js";
-import {
-  SupabaseAuthVerifier,
-  SupabaseCampaignStore,
-  SupabaseRestClient,
-} from "./supabase.js";
+import { SupabaseCampaignStore } from "./supabase.js";
 
 const SERVICE_VERSION = "0.12.0";
 const config = loadRuntimeConfig(process.env);
@@ -53,7 +51,7 @@ function createPersistence() {
     if (!config.authRequired) {
       return { store, discordBridge, authVerifier: null, authRequired: false };
     }
-    const authVerifier = new SupabaseAuthVerifier({
+    const authVerifier = new SafeSupabaseAuthVerifier({
       url: config.supabaseUrl,
       publishableKey: config.supabasePublishableKey,
     });
@@ -64,11 +62,11 @@ function createPersistence() {
     url: config.supabaseUrl,
     publishableKey: config.supabasePublishableKey,
   };
-  const client = new SupabaseRestClient(supabaseConfig);
+  const client = new SafeSupabaseRestClient(supabaseConfig);
   return {
     store: decorateCampaignStore(new SupabaseCampaignStore(client)),
     discordBridge: new SupabaseDiscordBridge(client),
-    authVerifier: new SupabaseAuthVerifier(supabaseConfig),
+    authVerifier: new SafeSupabaseAuthVerifier(supabaseConfig),
     authRequired: true,
   };
 }
@@ -78,7 +76,7 @@ const persistence = createPersistence();
 persistence.store = withLaunchControlStore(withProductionControlStore(persistence.store, {
   defaultPolicies: defaultGenerationPolicies(baseProvider.name, baseProvider.model),
 }));
-const provider = withProductionControls(baseProvider, persistence.store);
+const provider = withSafeProviderErrors(withProductionControls(baseProvider, persistence.store));
 const encounterEngine = persistence.store.requiresAuth ? null : new LocalEncounterEngine();
 const sharedHttpOptions = {
   corsOrigin: config.corsOrigin,
