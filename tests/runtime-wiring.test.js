@@ -8,6 +8,7 @@ const manifestUrl = new URL("../integrations/khaos-nexus/integration-manifest.js
 
 test("runtime attaches the desktop Co-DM contract and launch security boundary", async () => {
   const content = await readFile(indexUrl, "utf8");
+  assert.match(content, /const SERVICE_VERSION = "0\.12\.1"/);
   assert.match(content, /loadRuntimeConfig\(process\.env\)/);
   assert.match(content, /withCoDmDraft\(withSessionIntelligence\(new MockAiProvider\(\)\)\)/);
   assert.match(content, /withSessionIntelligenceStore\(/);
@@ -36,7 +37,7 @@ test("runtime attaches the desktop Co-DM contract and launch security boundary",
 
 test("build validates every production and app-integration runtime module", async () => {
   const packageJson = JSON.parse(await readFile(packageUrl, "utf8"));
-  assert.equal(packageJson.version, "0.12.0");
+  assert.equal(packageJson.version, "0.12.1");
   for (const modulePath of [
     "integrations/khaos-nexus/ai-service-client.js",
     "src/runtime-config.js",
@@ -70,15 +71,18 @@ test("build validates every production and app-integration runtime module", asyn
   ]) {
     assert.match(packageJson.scripts.build, new RegExp(modulePath.replaceAll(".", "\\.")));
   }
-  assert.equal(packageJson.scripts["test:launch"].includes("launch-hardening-migration.test.js"), true);
+  assert.equal(packageJson.scripts["test:launch"].includes("provider-launch-contract.test.js"), true);
   assert.equal(packageJson.scripts["test:integration"], "node --test tests/khaos-nexus-client.test.js");
   assert.equal(packageJson.scripts["smoke:production"], "node scripts/production-smoke.js");
 });
 
-test("integration manifest pins the privileged desktop boundary", async () => {
+test("integration manifest pins the privileged desktop and provider boundary", async () => {
   const manifest = JSON.parse(await readFile(manifestUrl, "utf8"));
-  assert.equal(manifest.minimumServiceVersion, "0.12.0");
+  assert.equal(manifest.minimumServiceVersion, "0.12.1");
   assert.equal(manifest.apiVersion, "1");
+  assert.equal(manifest.providerContract.productionModel, "gpt-5-mini-2025-08-07");
+  assert.equal(manifest.providerContract.responseStoreRequested, false);
+  assert.equal(manifest.providerContract.dataRetentionControlledByProviderProject, true);
   assert.equal(manifest.transport.mainProcessOnly, true);
   assert.equal(manifest.transport.productionHttpsRequired, true);
   assert.equal(manifest.transport.authentication, "supabase-bearer");

@@ -2,7 +2,7 @@ import { isIP } from "node:net";
 
 const PROVIDERS = ["mock", "openai"];
 const STORES = ["json", "supabase"];
-const LAUNCH_OPENAI_MODEL = "gpt-5-mini";
+const LAUNCH_OPENAI_MODEL = "gpt-5-mini-2025-08-07";
 const OFFICIAL_OPENAI_HOST = "api.openai.com";
 
 function configurationError(message) {

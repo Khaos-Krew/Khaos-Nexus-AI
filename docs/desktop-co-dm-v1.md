@@ -1,18 +1,14 @@
 # Khaos Nexus desktop Co-DM API v1
 
-The desktop Co-DM endpoint is a stateless, review-only generation contract. Khaos Nexus desktop selects and redacts campaign context, asks the user to initiate generation, displays the returned draft locally, and owns every explicit copy/save action.
+The desktop Co-DM endpoint is a stateless, review-only contract. Khaos Nexus desktop selects/redacts context, requires explicit user initiation, displays the returned draft, and owns every later copy/save/apply action.
 
-The AI service does not create a campaign, append a transcript, execute tools, post to Discord, or apply proposed changes for this endpoint.
+The endpoint does not create a campaign, append a transcript, execute tools, post to Discord, or apply proposed changes.
 
-## Capability
+## Capability and compatibility
 
-`GET /health` includes:
+`GET /health` includes `dnd.co-dm.draft`.
 
-```json
-"dnd.co-dm.draft"
-```
-
-The package version implementing the dedicated contract is `0.11.0`.
+Production app integration requires service `0.12.1` or newer. Production model selection is service-owned and pinned to `gpt-5-mini-2025-08-07`.
 
 ## Route
 
@@ -21,10 +17,11 @@ The package version implementing the dedicated contract is `0.11.0`.
 Required headers:
 
 - `Content-Type: application/json`
+- `Authorization: Bearer <Supabase access token>`
+- `X-Khaos-Tenant-Id: <authorized tenant UUID>`
 - `X-Khaos-Request-Id: <UUID>`
-- `Authorization: Bearer <access token>` when service authentication is enabled
 
-The header request ID must match the body request ID. It is used by the production-control ledger for correlation and duplicate-charge protection.
+The request-ID header must match the body request ID. It correlates UI, service monitoring, and duplicate-reservation protection.
 
 ## Workflows
 
@@ -71,18 +68,15 @@ The header request ID must match the body request ID. It is used by the producti
 }
 ```
 
-`model` must be `default`; provider and model selection remain server-owned. Unknown fields are rejected.
+`model` must be `default`; the client cannot select the provider/model. Unknown fields are rejected. `context.text` is limited to 120,000 characters, `prompt` to 12,000, context-section summaries to 50, and the HTTP body to 256 KiB.
 
-`context.text` is limited to 120,000 characters, `prompt` to 12,000 characters, at most 50 context-section summaries may be supplied, and the complete HTTP body is limited to 256 KiB.
+Context is untrusted reference data and cannot override service instructions.
 
-The service requires:
+## Provider retention meaning
 
-- explicit user initiation
-- no autonomous actions
-- no provider-side storage
-- no provider tools
+`providerStorageAllowed: false` is a required client/service policy: the service sends `store: false` and does not use conversations, files, background mode, or provider tools.
 
-Context text is treated as untrusted reference data and cannot override service instructions.
+It does **not** promise Zero Data Retention. OpenAI project data controls govern provider-side abuse-monitoring retention. Operators must separately review/configure Modified Abuse Monitoring or Zero Data Retention when eligible. Product copy must not describe this endpoint as “zero retention” unless the deployed OpenAI project actually has ZDR enabled.
 
 ## Response
 
@@ -92,7 +86,7 @@ Context text is treated as untrusted reference data and cannot override service 
   "requestId": "11111111-1111-4111-8111-111111111111",
   "draft": {
     "content": "Generated review draft",
-    "model": "openai/gpt-5-mini",
+    "model": "openai/gpt-5-mini-2025-08-07",
     "workflow": "session_prep"
   },
   "usage": {
@@ -102,25 +96,13 @@ Context text is treated as untrusted reference data and cannot override service 
 }
 ```
 
-Usage values are populated when the provider supplies them. The draft is bounded by `maxOutputCharacters`.
+Provider usage is included when supplied. Output is bounded by `maxOutputCharacters`.
 
 ## Errors
 
-Errors use a stable envelope:
+Errors use a stable safe envelope with `code`, `message`, `retryable`, and `requestId`. Provider credentials, provider payloads, database details, and stack traces are not returned.
 
-```json
-{
-  "apiVersion": "1",
-  "requestId": "uuid",
-  "error": {
-    "code": "INVALID_REQUEST",
-    "message": "Safe user-facing message",
-    "retryable": false
-  }
-}
-```
-
-Codes:
+Expected codes include:
 
 - `INVALID_REQUEST`
 - `AUTH_REQUIRED`
@@ -130,17 +112,15 @@ Codes:
 - `GENERATION_FAILED`
 - `METHOD_NOT_ALLOWED`
 
-Provider credentials and raw provider errors are never included.
-
 ## Production controls
 
-The endpoint uses feature `co_dm.draft` under prompt contract:
+Feature: `co_dm.draft`
 
 - prompt ID: `dnd-co-dm-draft`
 - prompt version: `1`
 - prompt hash: `fce64509f922302feafadd7a74e8cd741fa52376c9bee3eefce1770fbc9c110a`
-- policy version: `baseline-1`
+- global model policy: `launch-2`
 
-It shares Phase 8 model allow-lists, token/output limits, tenant/user/feature budgets, usage accounting, latency/error monitoring, copyright checks, player-agency checks, and secret-leakage evaluation.
+The endpoint shares model allow-lists, token/output limits, explicit tenant/user/feature budgets, idempotent usage accounting, latency/error monitoring, copyright checks, player-agency checks, and secret-leakage evaluation.
 
-OpenAI requests continue to use `store: false`. No Voice Co-DM capability is included.
+Voice Co-DM is not included.

@@ -1,7 +1,8 @@
 import { spawn } from "node:child_process";
 
 const port = 18000 + (process.pid % 10000);
-const expectedVersion = "0.12.0";
+const expectedVersion = "0.12.1";
+const expectedModel = "gpt-5-mini-2025-08-07";
 const child = spawn(process.execPath, ["src/index.js"], {
   cwd: new URL("..", import.meta.url),
   env: {
@@ -11,7 +12,7 @@ const child = spawn(process.execPath, ["src/index.js"], {
     PORT: String(port),
     AI_PROVIDER: "openai",
     OPENAI_API_KEY: "smoke-test-key-not-used",
-    OPENAI_MODEL: "gpt-5-mini",
+    OPENAI_MODEL: expectedModel,
     OPENAI_BASE_URL: "https://api.openai.com/v1",
     CAMPAIGN_STORE: "supabase",
     AUTH_REQUIRED: "true",
@@ -60,8 +61,8 @@ try {
   if (health.version !== expectedVersion) {
     throw new Error(`Expected version ${expectedVersion}, received ${health.version}`);
   }
-  if (health.provider !== "openai" || health.model !== "gpt-5-mini") {
-    throw new Error("Production provider/model configuration was not active");
+  if (health.provider !== "openai" || health.model !== expectedModel) {
+    throw new Error("Pinned production provider/model configuration was not active");
   }
   if (health.store !== "supabase" || health.authentication !== "required") {
     throw new Error("Production persistence/authentication configuration was not active");
@@ -82,4 +83,4 @@ try {
 if (child.exitCode !== 0 && child.signalCode !== "SIGTERM") {
   throw new Error(`Production smoke process did not shut down cleanly.\n${stderr}\n${stdout}`);
 }
-console.log("Production startup and health smoke passed");
+console.log("Production startup and pinned-model health smoke passed");

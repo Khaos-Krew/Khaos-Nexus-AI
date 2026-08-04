@@ -70,7 +70,7 @@ export class KhaosNexusAiClient {
     fetchImpl = fetch,
     timeoutMs = 75_000,
     expectedApiVersion = "1",
-    minimumServiceVersion = "0.12.0",
+    minimumServiceVersion = "0.12.1",
   } = {}) {
     this.baseUrl = normalizeBaseUrl(baseUrl);
     if (typeof fetchImpl !== "function") throw configurationError("fetchImpl must be a function");

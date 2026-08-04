@@ -26,7 +26,8 @@ test("health verifies API version, service version, and required capability", as
       return jsonResponse({
         status: "ok",
         apiVersion: "1",
-        version: "0.12.0",
+        version: "0.12.1",
+        model: "gpt-5-mini-2025-08-07",
         capabilities: ["dnd.co-dm.draft"],
       });
     },
@@ -102,7 +103,7 @@ test("safe service errors preserve correlation without exposing credentials", as
   );
 });
 
-test("incompatible service versions are rejected", async () => {
+test("service 0.12.0 and older are rejected", async () => {
   const client = new KhaosNexusAiClient({
     baseUrl: "https://ai.example.com",
     getAccessToken: () => "token",
@@ -110,7 +111,7 @@ test("incompatible service versions are rejected", async () => {
     fetchImpl: async () => jsonResponse({
       status: "ok",
       apiVersion: "1",
-      version: "0.11.9",
+      version: "0.12.0",
       capabilities: ["dnd.co-dm.draft"],
     }),
   });

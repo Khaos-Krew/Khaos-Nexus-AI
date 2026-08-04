@@ -26,7 +26,7 @@ import { withSessionIntelligenceStore } from "./session-intelligence-store.js";
 import { JsonCampaignStore } from "./store.js";
 import { SupabaseCampaignStore } from "./supabase.js";
 
-const SERVICE_VERSION = "0.12.0";
+const SERVICE_VERSION = "0.12.1";
 const config = loadRuntimeConfig(process.env);
 
 function createBaseProvider() {
