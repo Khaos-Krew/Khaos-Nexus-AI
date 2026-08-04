@@ -29,6 +29,22 @@ function requireUuid(value, field) {
   return value.toLowerCase();
 }
 
+function versionParts(value) {
+  const match = /^(\d+)\.(\d+)\.(\d+)(?:[-+].*)?$/.exec(String(value ?? ""));
+  return match ? match.slice(1).map(Number) : null;
+}
+
+function versionAtLeast(actual, minimum) {
+  const actualParts = versionParts(actual);
+  const minimumParts = versionParts(minimum);
+  if (!actualParts || !minimumParts) return false;
+  for (let index = 0; index < 3; index += 1) {
+    if (actualParts[index] > minimumParts[index]) return true;
+    if (actualParts[index] < minimumParts[index]) return false;
+  }
+  return true;
+}
+
 async function resolvedValue(provider, name) {
   const value = typeof provider === "function" ? await provider() : provider;
   if (typeof value !== "string" || !value.trim()) throw configurationError(`${name} is unavailable`);
@@ -61,6 +77,7 @@ export class KhaosNexusAiClient {
     if (!Number.isInteger(timeoutMs) || timeoutMs < 5_000 || timeoutMs > 300_000) {
       throw configurationError("timeoutMs must be an integer from 5000 to 300000");
     }
+    if (!versionParts(minimumServiceVersion)) throw configurationError("minimumServiceVersion must be semantic version text");
     this.getAccessToken = getAccessToken;
     this.getTenantId = getTenantId;
     this.fetchImpl = fetchImpl;
@@ -135,7 +152,8 @@ export class KhaosNexusAiClient {
 
   async health() {
     const payload = await this.request("/health", { authRequired: false });
-    if (payload?.status !== "ok" || payload?.apiVersion !== this.expectedApiVersion) {
+    if (payload?.status !== "ok" || payload?.apiVersion !== this.expectedApiVersion
+      || !versionAtLeast(payload?.version, this.minimumServiceVersion)) {
       throw new KhaosNexusAiServiceError("The AI service is incompatible", {
         status: 503,
         code: "AI_SERVICE_INCOMPATIBLE",
