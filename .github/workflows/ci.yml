@@ -18,6 +18,14 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+      - name: Audit runtime dependencies
+        run: npm audit --omit=dev
+      - name: Validate launch configuration and network hardening
+        run: npm run test:launch
+      - name: Validate Khaos Nexus desktop integration client
+        run: npm run test:integration
+      - name: Validate production startup and health
+        run: npm run smoke:production
       - name: Validate Discord command discovery
         run: node --test --test-name-pattern="command discovery" tests/discord-bridge.test.js
       - name: Validate Discord binding contracts
@@ -72,3 +80,5 @@ jobs:
         run: npm test
       - name: Validate syntax and runtime composition
         run: npm run build
+      - name: Build production container
+        run: docker build --tag khaos-nexus-ai:${{ github.sha }} .

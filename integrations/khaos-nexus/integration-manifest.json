@@ -1,0 +1,34 @@
+{
+  "service": "khaos-nexus-ai",
+  "minimumServiceVersion": "0.12.0",
+  "apiVersion": "1",
+  "healthPath": "/health",
+  "requiredCapabilities": [
+    "dnd.co-dm.draft"
+  ],
+  "transport": {
+    "productionHttpsRequired": true,
+    "mainProcessOnly": true,
+    "authentication": "supabase-bearer",
+    "requestIdHeader": "X-Khaos-Request-Id",
+    "tenantIdHeader": "X-Khaos-Tenant-Id"
+  },
+  "statelessGenerationPaths": [
+    "/api/v1/dnd/co-dm/drafts",
+    "/api/v1/homebrew/generations",
+    "/api/v1/maps/generations"
+  ],
+  "clientModule": "./ai-service-client.js",
+  "requiredCoDmPolicy": {
+    "explicitUserAction": true,
+    "autonomousActionsAllowed": false,
+    "providerStorageAllowed": false,
+    "toolsAllowed": false
+  },
+  "excludedCapabilities": [
+    "voice-co-dm",
+    "arbitrary-provider-selection",
+    "arbitrary-tool-execution",
+    "renderer-held-openai-key"
+  ]
+}
