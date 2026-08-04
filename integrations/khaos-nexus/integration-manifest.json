@@ -1,11 +1,16 @@
 {
   "service": "khaos-nexus-ai",
-  "minimumServiceVersion": "0.12.0",
+  "minimumServiceVersion": "0.12.1",
   "apiVersion": "1",
   "healthPath": "/health",
   "requiredCapabilities": [
     "dnd.co-dm.draft"
   ],
+  "providerContract": {
+    "productionModel": "gpt-5-mini-2025-08-07",
+    "responseStoreRequested": false,
+    "dataRetentionControlledByProviderProject": true
+  },
   "transport": {
     "productionHttpsRequired": true,
     "mainProcessOnly": true,
