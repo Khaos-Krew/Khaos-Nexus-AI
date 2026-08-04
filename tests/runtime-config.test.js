@@ -28,13 +28,14 @@ test("development defaults bind only to loopback", () => {
   assert.equal(config.authRequired, false);
 });
 
-test("production accepts an explicit authenticated configuration", () => {
+test("production accepts the exact launch provider configuration", () => {
   const config = loadRuntimeConfig(productionEnv());
   assert.equal(config.production, true);
   assert.equal(config.provider, "openai");
   assert.equal(config.store, "supabase");
   assert.equal(config.authRequired, true);
   assert.equal(config.openAiModel, "gpt-5-mini");
+  assert.equal(config.openAiBaseUrl, "https://api.openai.com/v1");
 });
 
 test("production rejects missing or insecure defaults", () => {
@@ -51,6 +52,11 @@ test("non-loopback binding requires authenticated Supabase mode", () => {
     CAMPAIGN_STORE: "json",
     AUTH_REQUIRED: "false",
   }), /non-loopback HOST requires authenticated Supabase mode/);
+});
+
+test("production pins the evaluated model and official provider endpoint", () => {
+  assert.throws(() => loadRuntimeConfig(productionEnv({ OPENAI_MODEL: "gpt-5.4-mini" })), /OPENAI_MODEL must be gpt-5-mini/);
+  assert.throws(() => loadRuntimeConfig(productionEnv({ OPENAI_BASE_URL: "https://proxy.example.com/v1" })), /api.openai.com/);
 });
 
 test("provider and Supabase URLs reject credential leakage and insecure remote HTTP", () => {
