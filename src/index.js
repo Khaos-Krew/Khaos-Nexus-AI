@@ -7,6 +7,8 @@ import { attachDiscordRoutes } from "./discord-http.js";
 import { attachDiscordSecurity } from "./discord-security.js";
 import { LocalEncounterEngine } from "./encounter-engine.js";
 import { configureHttpServer, logInternalError } from "./http-security.js";
+import { withLaunchControlStore } from "./launch-control-store.js";
+import { attachLaunchContext } from "./launch-context.js";
 import { attachMapSceneDiscordRoutes } from "./map-scene-discord.js";
 import { attachMapSceneRoutes } from "./map-scene-http.js";
 import { withMapSceneStore } from "./map-scene-store.js";
@@ -73,9 +75,9 @@ function createPersistence() {
 
 const baseProvider = createBaseProvider();
 const persistence = createPersistence();
-persistence.store = withProductionControlStore(persistence.store, {
+persistence.store = withLaunchControlStore(withProductionControlStore(persistence.store, {
   defaultPolicies: defaultGenerationPolicies(baseProvider.name, baseProvider.model),
-});
+}));
 const provider = withProductionControls(baseProvider, persistence.store);
 const encounterEngine = persistence.store.requiresAuth ? null : new LocalEncounterEngine();
 const sharedHttpOptions = {
@@ -90,37 +92,12 @@ const server = createApp({
   encounterEngine,
   ...sharedHttpOptions,
 });
-
-attachCoDmRoutes(server, {
-  ...persistence,
-  provider,
-  ...sharedHttpOptions,
-});
-attachSessionIntelligenceRoutes(server, {
-  ...persistence,
-  provider,
-  ...sharedHttpOptions,
-});
-attachRetrievalRoutes(server, {
-  ...persistence,
-  ...sharedHttpOptions,
-});
-attachMapSceneRoutes(server, {
-  ...persistence,
-  provider,
-  ...sharedHttpOptions,
-});
-attachDiscordRoutes(server, {
-  ...persistence,
-  provider,
-  encounterEngine,
-  ...sharedHttpOptions,
-});
-attachMapSceneDiscordRoutes(server, {
-  ...persistence,
-  provider,
-  ...sharedHttpOptions,
-});
+attachCoDmRoutes(server, { ...persistence, provider, ...sharedHttpOptions });
+attachSessionIntelligenceRoutes(server, { ...persistence, provider, ...sharedHttpOptions });
+attachRetrievalRoutes(server, { ...persistence, ...sharedHttpOptions });
+attachMapSceneRoutes(server, { ...persistence, provider, ...sharedHttpOptions });
+attachDiscordRoutes(server, { ...persistence, provider, encounterEngine, ...sharedHttpOptions });
+attachMapSceneDiscordRoutes(server, { ...persistence, provider, ...sharedHttpOptions });
 attachDiscordSecurity(server, sharedHttpOptions);
 attachProductionControlRoutes(server, {
   ...persistence,
@@ -128,6 +105,7 @@ attachProductionControlRoutes(server, {
   ...sharedHttpOptions,
   serviceVersion: SERVICE_VERSION,
 });
+attachLaunchContext(server, { ...persistence, ...sharedHttpOptions });
 configureHttpServer(server, config);
 
 let shuttingDown = false;
