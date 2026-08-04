@@ -7,13 +7,14 @@ function active() {
 }
 
 export function runWithProductionContext(context, callback) {
+  const parent = active() ?? {};
   return storage.run({
-    requestId: context.requestId ?? null,
-    userId: context.userId ?? null,
-    campaignId: context.campaignId ?? null,
-    tenantId: context.tenantId ?? null,
-    token: context.token ?? null,
-    path: context.path ?? "",
+    requestId: context.requestId ?? parent.requestId ?? null,
+    userId: context.userId ?? parent.userId ?? null,
+    campaignId: context.campaignId ?? parent.campaignId ?? null,
+    tenantId: context.tenantId ?? parent.tenantId ?? null,
+    token: context.token ?? parent.token ?? null,
+    path: context.path ?? parent.path ?? "",
     providerUsage: null,
     policy: null,
   }, callback);
