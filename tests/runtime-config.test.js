@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { isLoopbackHost, loadRuntimeConfig } from "../src/runtime-config.js";
 
+const SNAPSHOT = "gpt-5-mini-2025-08-07";
+
 function productionEnv(overrides = {}) {
   return {
     NODE_ENV: "production",
@@ -9,7 +11,7 @@ function productionEnv(overrides = {}) {
     PORT: "8787",
     AI_PROVIDER: "openai",
     OPENAI_API_KEY: "test-key-not-used",
-    OPENAI_MODEL: "gpt-5-mini",
+    OPENAI_MODEL: SNAPSHOT,
     OPENAI_BASE_URL: "https://api.openai.com/v1",
     CAMPAIGN_STORE: "supabase",
     AUTH_REQUIRED: "true",
@@ -28,13 +30,13 @@ test("development defaults bind only to loopback", () => {
   assert.equal(config.authRequired, false);
 });
 
-test("production accepts the exact launch provider configuration", () => {
+test("production accepts the exact pinned launch provider configuration", () => {
   const config = loadRuntimeConfig(productionEnv());
   assert.equal(config.production, true);
   assert.equal(config.provider, "openai");
   assert.equal(config.store, "supabase");
   assert.equal(config.authRequired, true);
-  assert.equal(config.openAiModel, "gpt-5-mini");
+  assert.equal(config.openAiModel, SNAPSHOT);
   assert.equal(config.openAiBaseUrl, "https://api.openai.com/v1");
 });
 
@@ -54,8 +56,9 @@ test("non-loopback binding requires authenticated Supabase mode", () => {
   }), /non-loopback HOST requires authenticated Supabase mode/);
 });
 
-test("production pins the evaluated model and official provider endpoint", () => {
-  assert.throws(() => loadRuntimeConfig(productionEnv({ OPENAI_MODEL: "gpt-5.4-mini" })), /OPENAI_MODEL must be gpt-5-mini/);
+test("production rejects moving aliases, unreviewed models, and provider proxies", () => {
+  assert.throws(() => loadRuntimeConfig(productionEnv({ OPENAI_MODEL: "gpt-5-mini" })), new RegExp(`OPENAI_MODEL must be ${SNAPSHOT}`));
+  assert.throws(() => loadRuntimeConfig(productionEnv({ OPENAI_MODEL: "gpt-5.4-mini" })), new RegExp(`OPENAI_MODEL must be ${SNAPSHOT}`));
   assert.throws(() => loadRuntimeConfig(productionEnv({ OPENAI_BASE_URL: "https://proxy.example.com/v1" })), /api.openai.com/);
 });
 
