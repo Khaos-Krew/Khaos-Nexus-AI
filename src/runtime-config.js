@@ -2,6 +2,8 @@ import { isIP } from "node:net";
 
 const PROVIDERS = ["mock", "openai"];
 const STORES = ["json", "supabase"];
+const LAUNCH_OPENAI_MODEL = "gpt-5-mini";
+const OFFICIAL_OPENAI_HOST = "api.openai.com";
 
 function configurationError(message) {
   const error = new Error(`Invalid runtime configuration: ${message}`);
@@ -46,7 +48,7 @@ function enumValue(env, name, allowed, defaultValue, required) {
 
 function normalizedHost(value) {
   const host = value.trim().replace(/^\[(.*)\]$/, "$1");
-  if (!host || /[\s/:?#@]/.test(host) && !isIP(host)) {
+  if (!host || (/[\s/:?#@]/.test(host) && !isIP(host))) {
     throw configurationError("HOST must be an IP address or hostname without a scheme, port, path, query, or fragment");
   }
   if (!isIP(host) && !/^[a-z0-9.-]+$/i.test(host)) {
@@ -112,24 +114,16 @@ export function loadRuntimeConfig(env = process.env) {
     allowWildcard: !production,
   });
 
-  if (production && provider !== "openai") {
-    throw configurationError("AI_PROVIDER must be openai in production");
-  }
-  if (production && store !== "supabase") {
-    throw configurationError("CAMPAIGN_STORE must be supabase in production");
-  }
-  if (production && !authRequired) {
-    throw configurationError("AUTH_REQUIRED must be true in production");
-  }
-  if (production && corsOrigin === "*") {
-    throw configurationError("CORS_ORIGIN cannot be * in production");
-  }
+  if (production && provider !== "openai") throw configurationError("AI_PROVIDER must be openai in production");
+  if (production && store !== "supabase") throw configurationError("CAMPAIGN_STORE must be supabase in production");
+  if (production && !authRequired) throw configurationError("AUTH_REQUIRED must be true in production");
+  if (production && corsOrigin === "*") throw configurationError("CORS_ORIGIN cannot be * in production");
   if (!isLoopbackHost(host) && (!authRequired || store !== "supabase")) {
     throw configurationError("non-loopback HOST requires authenticated Supabase mode");
   }
 
   const openAiApiKey = text(env, "OPENAI_API_KEY", { required: provider === "openai" });
-  const openAiModel = text(env, "OPENAI_MODEL", { defaultValue: "gpt-5-mini", required: provider === "openai" });
+  const openAiModel = text(env, "OPENAI_MODEL", { defaultValue: LAUNCH_OPENAI_MODEL, required: provider === "openai" });
   const openAiBaseUrl = normalizedUrl(text(env, "OPENAI_BASE_URL", {
     defaultValue: "https://api.openai.com/v1",
     required: provider === "openai",
@@ -138,14 +132,20 @@ export function loadRuntimeConfig(env = process.env) {
     production,
     allowPath: true,
   });
+  if (production && provider === "openai") {
+    if (openAiModel !== LAUNCH_OPENAI_MODEL) {
+      throw configurationError(`OPENAI_MODEL must be ${LAUNCH_OPENAI_MODEL} for launch`);
+    }
+    if (new URL(openAiBaseUrl).hostname.toLowerCase() !== OFFICIAL_OPENAI_HOST) {
+      throw configurationError(`OPENAI_BASE_URL must use ${OFFICIAL_OPENAI_HOST} in production`);
+    }
+  }
 
   const supabaseUrl = text(env, "SUPABASE_URL", { required: store === "supabase" || authRequired });
   const supabasePublishableKey = text(env, "SUPABASE_PUBLISHABLE_KEY", {
     required: store === "supabase" || authRequired,
   });
-  if (supabaseUrl) {
-    normalizedUrl(supabaseUrl, { name: "SUPABASE_URL", production, allowPath: false });
-  }
+  if (supabaseUrl) normalizedUrl(supabaseUrl, { name: "SUPABASE_URL", production, allowPath: false });
   if (/service_role|sb_secret_/i.test(supabasePublishableKey)) {
     throw configurationError("SUPABASE_PUBLISHABLE_KEY must not be a service-role or secret key");
   }
