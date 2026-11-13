@@ -41,8 +41,10 @@ function describeSupabaseFailure(payload, fallback) {
 export function extractBearerToken(request) {
   const header = request.headers.authorization;
   if (typeof header !== "string") return null;
-  const match = /^Bearer\s+(.+)$/i.exec(header.trim());
-  return match?.[1]?.trim() || null;
+  const trimmed = header.trim();
+  if (!trimmed.toLowerCase().startsWith("bearer ")) return null;
+  const token = trimmed.slice(7).trim();
+  return token || null;
 }
 
 export class SupabaseAuthVerifier {
