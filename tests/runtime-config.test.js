@@ -59,7 +59,7 @@ test("non-loopback binding requires authenticated Supabase mode", () => {
 test("production rejects moving aliases, unreviewed models, and provider proxies", () => {
   assert.throws(() => loadRuntimeConfig(productionEnv({ OPENAI_MODEL: "gpt-5-mini" })), new RegExp(`OPENAI_MODEL must be ${SNAPSHOT}`));
   assert.throws(() => loadRuntimeConfig(productionEnv({ OPENAI_MODEL: "gpt-5.4-mini" })), new RegExp(`OPENAI_MODEL must be ${SNAPSHOT}`));
-  assert.throws(() => loadRuntimeConfig(productionEnv({ OPENAI_BASE_URL: "https://proxy.example.com/v1" })), /api.openai.com/);
+  assert.throws(() => loadRuntimeConfig(productionEnv({ OPENAI_BASE_URL: "https://proxy.example.com/v1" })), /api\.openai\.com/);
 });
 
 test("provider and Supabase URLs reject credential leakage and insecure remote HTTP", () => {
